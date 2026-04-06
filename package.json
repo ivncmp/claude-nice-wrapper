@@ -1,0 +1,29 @@
+{
+  "name": "claude-wrapper",
+  "version": "0.1.0",
+  "description": "CLI wrapper for claude -p with history, memory, chat, and templates",
+  "type": "module",
+  "bin": {
+    "cw": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["claude", "cli", "wrapper", "ai"],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "chalk": "^5.4.0",
+    "commander": "^13.0.0",
+    "yaml": "^2.7.0"
+  }
+}

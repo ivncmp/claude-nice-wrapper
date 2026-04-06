@@ -1,0 +1,77 @@
+export interface ClaudeOptions {
+  prompt: string;
+  stdinContent?: string;
+  outputFormat?: "text" | "json" | "stream-json";
+  maxTurns?: number;
+  maxBudgetUsd?: number;
+  model?: string;
+  systemPrompt?: string;
+  appendSystemPrompt?: string;
+  resumeSessionId?: string;
+  continueSession?: boolean;
+  allowedTools?: string[];
+  additionalArgs?: string[];
+}
+
+export interface ClaudeResult {
+  result: string;
+  sessionId: string;
+  costUsd: number;
+  durationMs: number;
+  isError: boolean;
+  raw?: unknown;
+}
+
+export interface HistoryEntry {
+  id: string;
+  timestamp: string;
+  prompt: string;
+  result: string;
+  sessionId: string;
+  costUsd: number;
+  durationMs: number;
+  model?: string;
+  templateUsed?: string;
+}
+
+export interface SessionInfo {
+  sessionId: string;
+  startedAt: string;
+  name?: string;
+}
+
+export interface TemplateDefinition {
+  name: string;
+  description?: string;
+  prompt: string;
+  variables?: TemplateVariable[];
+  claudeOptions?: Partial<Pick<ClaudeOptions, "model" | "maxTurns" | "maxBudgetUsd">>;
+}
+
+export interface TemplateVariable {
+  name: string;
+  source?: "stdin" | "arg" | "flag";
+  required?: boolean;
+  default?: string;
+}
+
+export interface AppConfig {
+  memory: {
+    autoInject: boolean;
+    defaultKeys: string[];
+    maxInjectionChars: number;
+  };
+  life: {
+    autoInject: boolean;
+    dir: string;
+    maxInjectionChars: number;
+  };
+  history: {
+    maxEntries: number;
+  };
+  defaults: {
+    model?: string;
+    maxTurns?: number;
+    outputFormat?: "text" | "json" | "stream-json";
+  };
+}
