@@ -86,10 +86,6 @@ export async function runAsk(
     }
   }
 
-  const appendSystemPrompt = contextParts.length > 0
-    ? contextParts.join("\n\n---\n\n")
-    : undefined;
-
   // Check session token limit before resuming
   let resumeSessionId = opts.resume as string | undefined;
   const maxSessionTokens = opts.maxSessionTokens as number | undefined;
@@ -107,6 +103,10 @@ export async function runAsk(
       contextParts.unshift(recentHistory);
     }
   }
+
+  const appendSystemPrompt = contextParts.length > 0
+    ? contextParts.join("\n\n---\n\n")
+    : undefined;
 
   const claudeOpts: ClaudeOptions = {
     prompt: fullPrompt,

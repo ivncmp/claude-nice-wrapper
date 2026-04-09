@@ -5,25 +5,7 @@ interface HistoryMessage {
   role: "user" | "assistant";
   text: string;
   timestamp: string;
-}
-
-async function getMostRecentSessionFile(sessionsDir: string): Promise<string | null> {
-  try {
-    const files = await readdir(sessionsDir);
-    const jsonlFiles = files.filter(f => f.endsWith(".jsonl") && !f.includes(".deleted") && !f.includes(".reset"));
-    if (jsonlFiles.length === 0) return null;
-
-    const withMtime = await Promise.all(
-      jsonlFiles.map(async f => {
-        const s = await stat(join(sessionsDir, f));
-        return { file: f, mtime: s.mtimeMs };
-      })
-    );
-    withMtime.sort((a, b) => b.mtime - a.mtime);
-    return join(sessionsDir, withMtime[0].file);
-  } catch {
-    return null;
-  }
+  ts: number;
 }
 
 function extractText(content: unknown): string {
@@ -38,33 +20,22 @@ function extractText(content: unknown): string {
 }
 
 // Strip Telegram metadata blocks from user messages:
-// "Conversation info (untrusted metadata):\n```json\n...\n```\n\n..."
+// "Conversation info (untrusted metadata):\n```json\n...\n```\n\nSender...\n```\n\n<actual message>"
 function stripTelegramMetadata(text: string): string {
-  // Find the last closing ``` followed by a blank line, and take everything after
-  const match = text.match(/^[\s\S]*?```\n\n([\s\S]*)$/);
+  // Greedy match: find the LAST closing ``` followed by newlines, take everything after
+  const match = text.match(/^[\s\S]*```\n+([\s\S]*)$/);
   if (match) return match[1].trim();
   return text.trim();
 }
 
-export async function buildRecentHistoryContext(
-  sessionsDir: string,
-  windowHours: number = 2,
-  maxChars: number = 3000
-): Promise<string> {
-  const sessionFile = await getMostRecentSessionFile(sessionsDir);
-  if (!sessionFile) return "";
-
+async function parseSessionFile(filePath: string, cutoff: number): Promise<HistoryMessage[]> {
+  const messages: HistoryMessage[] = [];
   try {
-    const raw = await readFile(sessionFile, "utf-8");
-    const lines = raw.trim().split("\n").filter(Boolean);
-    const cutoff = Date.now() - windowHours * 60 * 60 * 1000;
-
-    const messages: HistoryMessage[] = [];
-    for (const line of lines) {
+    const raw = await readFile(filePath, "utf-8");
+    for (const line of raw.trim().split("\n").filter(Boolean)) {
       try {
         const entry = JSON.parse(line);
 
-        // Support both claude CLI format (type:"user"/"assistant") and legacy format (type:"message")
         let role: string | undefined;
         let msgContent: unknown;
 
@@ -86,40 +57,77 @@ export async function buildRecentHistoryContext(
         let text = extractText(msgContent);
         if (!text.trim()) continue;
 
-        // Strip Telegram metadata wrapper from user messages
         if (role === "user" && text.includes("(untrusted metadata)")) {
           text = stripTelegramMetadata(text);
         }
 
         if (!text.trim()) continue;
 
-        const time = new Date(entry.timestamp).toISOString().slice(11, 16); // HH:MM
-        messages.push({ role: role as "user" | "assistant", text: text.trim(), timestamp: time });
+        const time = new Date(entry.timestamp).toISOString().slice(11, 16);
+        messages.push({ role: role as "user" | "assistant", text: text.trim(), timestamp: time, ts });
       } catch {
         // skip malformed lines
       }
     }
+  } catch {
+    // skip unreadable files
+  }
+  return messages;
+}
 
-    if (messages.length === 0) return "";
+export async function buildRecentHistoryContext(
+  sessionsDir: string,
+  windowHours: number = 2,
+  maxChars: number = 3000
+): Promise<string> {
+  const cutoff = Date.now() - windowHours * 60 * 60 * 1000;
 
-    // Format compactly, trim long messages
+  try {
+    const files = await readdir(sessionsDir);
+    const jsonlFiles = files.filter(
+      f => f.endsWith(".jsonl") && !f.includes(".deleted") && !f.includes(".reset")
+    );
+
+    // Only consider files modified within the window (+ 1h buffer)
+    const recentFiles = (
+      await Promise.all(
+        jsonlFiles.map(async f => {
+          const s = await stat(join(sessionsDir, f));
+          return { path: join(sessionsDir, f), mtime: s.mtimeMs };
+        })
+      )
+    ).filter(f => f.mtime >= cutoff - 60 * 60 * 1000);
+
+    if (recentFiles.length === 0) return "";
+
+    // Parse all recent files and merge messages
+    const allMessages: HistoryMessage[] = (
+      await Promise.all(recentFiles.map(f => parseSessionFile(f.path, cutoff)))
+    ).flat();
+
+    if (allMessages.length === 0) return "";
+
+    // Sort newest first, fill from most recent until we hit the char limit, then reverse for display
+    allMessages.sort((a, b) => b.ts - a.ts);
+
     const MAX_MSG_CHARS = 300;
-    const lines2: string[] = ["## Recent conversation (last 2h)\n"];
-    let total = lines2[0].length;
+    const selected: string[] = [];
+    let total = 0;
 
-    for (const m of messages) {
+    for (const m of allMessages) {
       const label = m.role === "user" ? "user" : "bot";
       const text = m.text.length > MAX_MSG_CHARS
         ? m.text.slice(0, MAX_MSG_CHARS) + "…"
         : m.text;
       const line = `[${m.timestamp}] ${label}: ${text}`;
       if (total + line.length > maxChars) break;
-      lines2.push(line);
+      selected.push(line);
       total += line.length;
     }
 
-    if (lines2.length <= 1) return "";
-    return lines2.join("\n");
+    if (selected.length === 0) return "";
+    selected.reverse(); // restore chronological order for display
+    return ["## Recent conversation (last 2h)\n", ...selected].join("\n");
   } catch {
     return "";
   }
