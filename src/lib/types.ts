@@ -13,12 +13,21 @@ export interface ClaudeOptions {
   additionalArgs?: string[];
 }
 
+export interface ClaudeUsage {
+  input: number;
+  output: number;
+  cacheWrite: number;
+  cacheRead: number;
+  total: number;
+}
+
 export interface ClaudeResult {
   result: string;
   sessionId: string;
   costUsd: number;
   durationMs: number;
   isError: boolean;
+  usage?: ClaudeUsage;
   raw?: unknown;
 }
 

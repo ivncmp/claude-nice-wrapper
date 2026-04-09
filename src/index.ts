@@ -63,6 +63,9 @@ program
   .option("--no-life", "Skip life/PARA context injection")
   .option("--no-history", "Don't save to history")
   .option("--raw", "Print raw JSON response")
+  .option("--token-footer", "Append token usage footer to response text")
+  .option("--max-session-tokens <n>", "Reset session if context exceeds this token count", parseInt)
+  .option("--history-dir <path>", "Openclaw sessions dir to inject recent history on reset")
   .option("-c, --continue", "Continue last conversation")
   .option("-r, --resume <id>", "Resume a specific session")
   .action(async (promptParts: string[], opts) => {

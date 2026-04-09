@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import type { ClaudeOptions, ClaudeResult } from "./lib/types.js";
+import type { ClaudeOptions, ClaudeResult, ClaudeUsage } from "./lib/types.js";
 
 export async function execClaude(options: ClaudeOptions): Promise<ClaudeResult> {
   const args = buildArgs(options);
@@ -47,12 +47,21 @@ export async function execClaude(options: ClaudeOptions): Promise<ClaudeResult> 
 
       try {
         const parsed = JSON.parse(stdout);
+        const u = parsed.usage ?? {};
+        const usage: ClaudeUsage = {
+          input: u.input_tokens ?? 0,
+          output: u.output_tokens ?? 0,
+          cacheWrite: u.cache_creation_input_tokens ?? 0,
+          cacheRead: u.cache_read_input_tokens ?? 0,
+          total: (u.input_tokens ?? 0) + (u.output_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0),
+        };
         resolve({
           result: parsed.result ?? parsed.content ?? stdout,
           sessionId: parsed.session_id ?? "",
-          costUsd: parsed.cost_usd ?? 0,
+          costUsd: parsed.cost_usd ?? parsed.total_cost_usd ?? 0,
           durationMs,
           isError: parsed.is_error ?? false,
+          usage,
           raw: parsed,
         });
       } catch {

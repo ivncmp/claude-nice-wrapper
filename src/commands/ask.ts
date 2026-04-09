@@ -5,6 +5,8 @@ import { addHistoryEntry } from "../lib/history-store.js";
 import { buildMemoryContext } from "../lib/memory-store.js";
 import { buildLifeContext } from "../lib/life-store.js";
 import { loadConfig } from "../lib/config.js";
+import { getSessionTokens, updateSessionTokens } from "../lib/session-state.js";
+import { buildRecentHistoryContext } from "../lib/recent-history.js";
 import type { ClaudeOptions } from "../lib/types.js";
 
 export function createAskCommand(): Command {
@@ -21,6 +23,9 @@ export function createAskCommand(): Command {
     .option("--no-life", "Skip life/PARA context injection")
     .option("--no-history", "Don't save to history")
     .option("--raw", "Print raw JSON response")
+    .option("--token-footer", "Append token usage footer to response text")
+    .option("--max-session-tokens <n>", "Reset session if context exceeds this token count", parseInt)
+    .option("--history-dir <path>", "Openclaw sessions dir to inject recent history on reset")
     .option("-c, --continue", "Continue last conversation")
     .option("-r, --resume <id>", "Resume a specific session")
     .action(async (promptParts: string[], opts) => {
@@ -85,18 +90,59 @@ export async function runAsk(
     ? contextParts.join("\n\n---\n\n")
     : undefined;
 
+  // Check session token limit before resuming
+  let resumeSessionId = opts.resume as string | undefined;
+  const maxSessionTokens = opts.maxSessionTokens as number | undefined;
+  let sessionWasReset = false;
+  if (resumeSessionId && maxSessionTokens) {
+    const currentTokens = await getSessionTokens(resumeSessionId);
+    if (currentTokens > maxSessionTokens) {
+      resumeSessionId = undefined; // drop resume, start fresh
+      sessionWasReset = true;
+    }
+  }
+
+  // On session reset, inject recent chat history as context
+  if (sessionWasReset && opts.historyDir) {
+    const recentHistory = await buildRecentHistoryContext(opts.historyDir as string);
+    if (recentHistory) {
+      contextParts.unshift(recentHistory);
+    }
+  }
+
   const claudeOpts: ClaudeOptions = {
     prompt: fullPrompt,
     model: (opts.model as string) ?? config.defaults.model,
     maxTurns: (opts.maxTurns as number) ?? config.defaults.maxTurns,
     maxBudgetUsd: opts.maxBudgetUsd as number | undefined,
     systemPrompt: opts.systemPrompt as string | undefined,
-    appendSystemPrompt,
-    resumeSessionId: opts.resume as string | undefined,
+    appendSystemPrompt: resumeSessionId ? undefined : appendSystemPrompt,
+    resumeSessionId,
     continueSession: opts.continue as boolean | undefined,
   };
 
   const result = await execClaude(claudeOpts);
+
+  // Persist token count for this session
+  if (result.sessionId && result.usage) {
+    await updateSessionTokens(result.sessionId, result.usage.total);
+  }
+
+  // Append token footer if requested
+  if (opts.tokenFooter && result.usage) {
+    const u = result.usage;
+    const parts: string[] = [];
+    if (u.cacheWrite > 0) parts.push(`cW:${u.cacheWrite.toLocaleString()}`);
+    if (u.cacheRead > 0) parts.push(`cR:${u.cacheRead.toLocaleString()}`);
+    parts.push(`in:${u.input.toLocaleString()}`);
+    parts.push(`out:${u.output.toLocaleString()}`);
+    parts.push(`~${u.total.toLocaleString()}`);
+    const footer = `\n\n—————————————\n\`${parts.join(" · ")}\``;
+    result.result += footer;
+    if (result.raw && typeof result.raw === "object") {
+      (result.raw as Record<string, unknown>).result = result.result;
+    }
+  }
 
   // Output
   if (opts.raw) {
