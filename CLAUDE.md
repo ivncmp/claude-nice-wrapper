@@ -20,7 +20,7 @@ No test framework is configured yet. No linter is configured.
 
 **Entry point:** `src/index.ts` — sets up Commander CLI program. The bare `cw <prompt>` invocation is a shorthand that delegates to `runAsk()`.
 
-**Core execution:** `src/claude.ts` — `execClaude()` spawns `claude --print --output-format json` as a child process, parses JSON output into `ClaudeResult`. All Claude interactions flow through this single function.
+**Core execution:** `src/claude.ts` — `execClaude()` spawns `claude --print --output-format json --dangerously-skip-permissions` as a child process, parses JSON output into `ClaudeResult`. All Claude interactions flow through this single function.
 
 **Commands** (`src/commands/`):
 - `ask.ts` — single-shot prompt; injects memory + life context via `appendSystemPrompt`, saves to history
@@ -33,9 +33,9 @@ No test framework is configured yet. No linter is configured.
 **Data layer** (`src/lib/`):
 - `config.ts` — reads/writes `~/.claude-wrapper/config.json`; provides `getDataDir()` used by all stores; supports dot-notation keys for deep get/set
 - `history-store.ts` — append-only JSONL file at `~/.claude-wrapper/history.jsonl`
-- `memory-store.ts` — one `.md` file per key in `~/.claude-wrapper/memory/`; `buildMemoryContext()` assembles them for system prompt injection
+- `memory-store.ts` — one `.md` file per key in `~/.claude-wrapper/memory/` (keys are slugified for filenames); `buildMemoryContext()` assembles them for system prompt injection
 - `template-store.ts` — one `.yaml` file per template in `~/.claude-wrapper/templates/`; `renderTemplate()` does `{{var}}` substitution
-- `life-store.ts` — optional PARA knowledge base integration; reads summaries from `~/life/` directory; injected alongside memory context
+- `life-store.ts` — optional PARA knowledge base integration; has two modes: semantic search (via bundled `scripts/search_facts.py`) when a query is provided, or full scan of `~/life/{projects,areas,resources}/**/summary.md` as fallback; injected alongside memory context
 - `types.ts` — shared TypeScript interfaces (`ClaudeOptions`, `ClaudeResult`, `HistoryEntry`, `TemplateDefinition`, `AppConfig`)
 
 **Context injection pipeline:** Memory and life context are assembled separately (`buildMemoryContext()` and `buildLifeContext()`), joined with `"\n\n---\n\n"`, and passed to Claude via `--append-system-prompt`. Memory is truncated to `config.memory.maxInjectionChars` (default 4000) and life to `config.life.maxInjectionChars` (default 12000). This injection happens in `ask.ts` and on the first turn only in `chat.ts`.

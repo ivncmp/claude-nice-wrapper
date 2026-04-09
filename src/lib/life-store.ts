@@ -1,9 +1,12 @@
 import { readFile, readdir, stat, appendFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { loadConfig } from "./config.js";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 function debugLog(msg: string): void {
   const line = `[${new Date().toISOString()}] ${msg}\n`;
@@ -13,9 +16,7 @@ function debugLog(msg: string): void {
 const execFileAsync = promisify(execFile);
 
 const SEARCH_SCRIPT = join(
-  homedir(),
-  ".openclaw",
-  "workspace",
+  __dirname,
   "scripts",
   "search_facts.py"
 );

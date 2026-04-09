@@ -14,10 +14,15 @@
     "dev": "tsup --watch",
     "prepublishOnly": "npm run build"
   },
-  "keywords": ["claude", "cli", "wrapper", "ai"],
+  "keywords": [
+    "claude",
+    "cli",
+    "wrapper",
+    "ai"
+  ],
   "license": "MIT",
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^22.19.17",
     "tsup": "^8.0.0",
     "typescript": "^5.7.0"
   },
