@@ -119,7 +119,7 @@ export async function runAsk(
     maxTurns: (opts.maxTurns as number) ?? config.defaults.maxTurns,
     maxBudgetUsd: opts.maxBudgetUsd as number | undefined,
     systemPrompt: opts.systemPrompt as string | undefined,
-    appendSystemPrompt: resumeSessionId ? undefined : appendSystemPrompt,
+    appendSystemPrompt: (resumeSessionId && !shouldInjectHistory) ? undefined : appendSystemPrompt,
     resumeSessionId,
     continueSession: opts.continue as boolean | undefined,
   };
