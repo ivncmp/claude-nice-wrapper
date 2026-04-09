@@ -1,9 +1,14 @@
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readFile, readdir, stat, appendFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { loadConfig } from "./config.js";
+
+function debugLog(msg: string): void {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  appendFile(join(homedir(), ".claude-wrapper", "debug.log"), line).catch(() => {});
+}
 
 const execFileAsync = promisify(execFile);
 
@@ -115,18 +120,47 @@ export async function buildLifeContext(
   const config = await loadConfig();
   const limit = maxChars ?? config.life.maxInjectionChars;
   const lifeDir = config.life.dir || getLifeDir();
+  debugLog(`buildLifeContext called — lifeDir: ${lifeDir}, query: ${query?.slice(0, 80)}, limit: ${limit}`);
 
   // If we have a query, use PARA search for targeted context
   if (query) {
     try {
       return await buildSearchedLifeContext(query, lifeDir, limit);
-    } catch {
-      // Fall through to full scan if search fails
+    } catch (err: unknown) {
+      debugLog(`PARA search failed, falling back to full scan: ${err}`);
     }
+  } else {
+    debugLog(`No query provided, skipping search`);
   }
 
   // Fallback: full scan (no query, or search failed)
-  return await buildFullLifeContext(lifeDir, limit);
+  try {
+    const result = await buildFullLifeContext(lifeDir, limit);
+    debugLog(`PARA full scan returned ${result.length} chars from dir: ${lifeDir}`);
+    return result;
+  } catch (err) {
+    debugLog(`PARA full scan failed for dir ${lifeDir}: ${err}`);
+    return "";
+  }
+}
+
+/**
+ * Find the owner entity by checking items.json for category: "owner".
+ */
+async function findOwnerEntity(
+  allEntities: LifeEntity[]
+): Promise<string | null> {
+  for (const entity of allEntities) {
+    const itemsPath = entity.summaryPath.replace("summary.md", "items.json");
+    try {
+      const raw = await readFile(itemsPath, "utf-8");
+      const data = JSON.parse(raw);
+      if (data.category === "owner") return entity.name;
+    } catch {
+      // skip
+    }
+  }
+  return null;
 }
 
 /**
@@ -139,8 +173,7 @@ async function buildSearchedLifeContext(
 ): Promise<string> {
   const { entities: relevantNames, facts } =
     await searchRelevantEntities(query);
-
-  if (relevantNames.length === 0) return "";
+  debugLog(`PARA search returned ${relevantNames.length} entities, ${facts.length} facts`);
 
   // Discover all entities so we can map names to summary paths
   const allEntities = await discoverEntities(lifeDir);
@@ -149,10 +182,19 @@ async function buildSearchedLifeContext(
     entityMap.set(e.name, e);
   }
 
+  // Always include the owner entity first for identity resolution
+  const ownerName = await findOwnerEntity(allEntities);
+  if (ownerName && !relevantNames.includes(ownerName)) {
+    relevantNames.unshift(ownerName);
+    debugLog(`PARA injected owner entity: ${ownerName}`);
+  }
+
+  if (relevantNames.length === 0) return "";
+
   const parts: string[] = [];
   let totalChars = 0;
 
-  // Inject summaries of relevant entities
+  // Inject summaries of relevant entities (owner first if present)
   for (const name of relevantNames) {
     const entity = entityMap.get(name);
     if (!entity) continue;
@@ -186,6 +228,7 @@ async function buildSearchedLifeContext(
     }
   }
 
+  debugLog(`PARA searched context: ${parts.length} parts, ${totalChars} chars`);
   if (parts.length === 0) return "";
 
   return `You have the following life/PARA knowledge context relevant to this query:\n\n${parts.join("\n\n")}`;

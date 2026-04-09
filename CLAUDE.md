@@ -23,17 +23,23 @@ No test framework is configured yet. No linter is configured.
 **Core execution:** `src/claude.ts` — `execClaude()` spawns `claude --print --output-format json` as a child process, parses JSON output into `ClaudeResult`. All Claude interactions flow through this single function.
 
 **Commands** (`src/commands/`):
-- `ask.ts` — single-shot prompt; injects memory context via `appendSystemPrompt`, saves to history
-- `chat.ts` — interactive REPL using readline; tracks session ID across turns via `--resume`
+- `ask.ts` — single-shot prompt; injects memory + life context via `appendSystemPrompt`, saves to history
+- `chat.ts` — interactive REPL using readline; tracks session ID across turns via `--resume`; system prompt only injected on first turn
 - `history.ts` — list/show/search/clear history entries
 - `memory.ts` — CRUD for named memory snippets (markdown files)
 - `template.ts` — CRUD and execution of YAML prompt templates with `{{variable}}` interpolation
+- Config commands are registered directly in `index.ts` (`cw config set/get`)
 
 **Data layer** (`src/lib/`):
-- `config.ts` — reads/writes `~/.claude-wrapper/config.json`; provides `getDataDir()` used by all stores
+- `config.ts` — reads/writes `~/.claude-wrapper/config.json`; provides `getDataDir()` used by all stores; supports dot-notation keys for deep get/set
 - `history-store.ts` — append-only JSONL file at `~/.claude-wrapper/history.jsonl`
 - `memory-store.ts` — one `.md` file per key in `~/.claude-wrapper/memory/`; `buildMemoryContext()` assembles them for system prompt injection
 - `template-store.ts` — one `.yaml` file per template in `~/.claude-wrapper/templates/`; `renderTemplate()` does `{{var}}` substitution
+- `life-store.ts` — optional PARA knowledge base integration; reads summaries from `~/life/` directory; injected alongside memory context
 - `types.ts` — shared TypeScript interfaces (`ClaudeOptions`, `ClaudeResult`, `HistoryEntry`, `TemplateDefinition`, `AppConfig`)
+
+**Context injection pipeline:** Memory and life context are assembled separately (`buildMemoryContext()` and `buildLifeContext()`), joined with `"\n\n---\n\n"`, and passed to Claude via `--append-system-prompt`. Memory is truncated to `config.memory.maxInjectionChars` (default 4000) and life to `config.life.maxInjectionChars` (default 12000). This injection happens in `ask.ts` and on the first turn only in `chat.ts`.
+
+**Key CLI flags** shared across commands: `--no-memory`, `--memory <keys>` (comma-separated), `--no-life`, `--no-history`, `--raw`, `-c/--continue` (resume last session), `-r/--resume <id>`.
 
 **Build:** tsup bundles `src/index.ts` into a single ESM file in `dist/` with a `#!/usr/bin/env node` shebang. The package uses `"type": "module"` and Node16/NodeNext module resolution — all local imports must use `.js` extensions.
