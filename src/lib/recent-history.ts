@@ -37,6 +37,15 @@ function extractText(content: unknown): string {
   return "";
 }
 
+// Strip Telegram metadata blocks from user messages:
+// "Conversation info (untrusted metadata):\n```json\n...\n```\n\n..."
+function stripTelegramMetadata(text: string): string {
+  // Find the last closing ``` followed by a blank line, and take everything after
+  const match = text.match(/^[\s\S]*?```\n\n([\s\S]*)$/);
+  if (match) return match[1].trim();
+  return text.trim();
+}
+
 export async function buildRecentHistoryContext(
   sessionsDir: string,
   windowHours: number = 2,
@@ -54,21 +63,38 @@ export async function buildRecentHistoryContext(
     for (const line of lines) {
       try {
         const entry = JSON.parse(line);
-        if (entry.type !== "message") continue;
-        const msg = entry.message;
-        if (!msg || !["user", "assistant"].includes(msg.role)) continue;
+
+        // Support both claude CLI format (type:"user"/"assistant") and legacy format (type:"message")
+        let role: string | undefined;
+        let msgContent: unknown;
+
+        if (entry.type === "message" && entry.message) {
+          role = entry.message.role;
+          msgContent = entry.message.content;
+        } else if ((entry.type === "user" || entry.type === "assistant") && entry.message) {
+          role = entry.message.role ?? entry.type;
+          msgContent = entry.message.content;
+        } else {
+          continue;
+        }
+
+        if (!role || !["user", "assistant"].includes(role)) continue;
 
         const ts = new Date(entry.timestamp).getTime();
         if (ts < cutoff) continue;
 
-        const text = extractText(msg.content);
+        let text = extractText(msgContent);
         if (!text.trim()) continue;
 
-        // Skip tool calls and system metadata
-        if (text.includes("Conversation info (untrusted metadata)")) continue;
+        // Strip Telegram metadata wrapper from user messages
+        if (role === "user" && text.includes("(untrusted metadata)")) {
+          text = stripTelegramMetadata(text);
+        }
+
+        if (!text.trim()) continue;
 
         const time = new Date(entry.timestamp).toISOString().slice(11, 16); // HH:MM
-        messages.push({ role: msg.role, text: text.trim(), timestamp: time });
+        messages.push({ role: role as "user" | "assistant", text: text.trim(), timestamp: time });
       } catch {
         // skip malformed lines
       }
