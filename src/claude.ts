@@ -70,7 +70,7 @@ export async function execClaude(options: ClaudeOptions): Promise<ClaudeResult> 
 }
 
 function buildArgs(options: ClaudeOptions): string[] {
-  const args = ["--print", "--output-format", "json"];
+  const args = ["--print", "--output-format", "json", "--dangerously-skip-permissions"];
 
   if (options.model) {
     args.push("--model", options.model);
