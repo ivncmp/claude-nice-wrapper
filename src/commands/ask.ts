@@ -93,17 +93,15 @@ export async function runAsk(
   // Check session token limit before resuming
   let resumeSessionId = opts.resume as string | undefined;
   const maxSessionTokens = opts.maxSessionTokens as number | undefined;
-  let sessionWasReset = false;
   if (resumeSessionId && maxSessionTokens) {
     const currentTokens = await getSessionTokens(resumeSessionId);
     if (currentTokens > maxSessionTokens) {
       resumeSessionId = undefined; // drop resume, start fresh
-      sessionWasReset = true;
     }
   }
 
-  // On session reset, inject recent chat history as context
-  if (sessionWasReset && opts.historyDir) {
+  // Inject recent chat history on any new session (no active resume)
+  if (!resumeSessionId && opts.historyDir) {
     const recentHistory = await buildRecentHistoryContext(opts.historyDir as string);
     if (recentHistory) {
       contextParts.unshift(recentHistory);
