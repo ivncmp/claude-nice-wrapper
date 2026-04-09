@@ -49,7 +49,7 @@ async function parseSessionFile(filePath: string, cutoff: number): Promise<Histo
           continue;
         }
 
-        if (!role || !["user", "assistant"].includes(role)) continue;
+        if (role !== "user") continue; // only user messages — avoids echoing back confused bot responses
 
         const ts = new Date(entry.timestamp).getTime();
         if (ts < cutoff) continue;
@@ -77,7 +77,7 @@ async function parseSessionFile(filePath: string, cutoff: number): Promise<Histo
 
 export async function buildRecentHistoryContext(
   sessionsDir: string,
-  windowHours: number = 2,
+  windowHours: number = 1,
   maxChars: number = 3000
 ): Promise<string> {
   const cutoff = Date.now() - windowHours * 60 * 60 * 1000;
@@ -127,7 +127,7 @@ export async function buildRecentHistoryContext(
 
     if (selected.length === 0) return "";
     selected.reverse(); // restore chronological order for display
-    return ["## Recent conversation (last 2h)\n", ...selected].join("\n");
+    return [`## Recent user messages (last ${windowHours}h)\n`, ...selected].join("\n");
   } catch {
     return "";
   }
