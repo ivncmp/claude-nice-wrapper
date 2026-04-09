@@ -31,6 +31,13 @@ export async function getSessionTokens(sessionId: string): Promise<number> {
   return state[sessionId]?.totalTokens ?? 0;
 }
 
+export async function getSessionIdleMinutes(sessionId: string): Promise<number> {
+  const state = await loadState();
+  const entry = state[sessionId];
+  if (!entry) return Infinity;
+  return (Date.now() - new Date(entry.updatedAt).getTime()) / 60000;
+}
+
 export async function updateSessionTokens(sessionId: string, totalTokens: number): Promise<void> {
   const state = await loadState();
   state[sessionId] = { totalTokens, updatedAt: new Date().toISOString() };

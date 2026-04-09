@@ -5,7 +5,7 @@ import { addHistoryEntry } from "../lib/history-store.js";
 import { buildMemoryContext } from "../lib/memory-store.js";
 import { buildLifeContext } from "../lib/life-store.js";
 import { loadConfig } from "../lib/config.js";
-import { getSessionTokens, updateSessionTokens } from "../lib/session-state.js";
+import { getSessionTokens, updateSessionTokens, getSessionIdleMinutes } from "../lib/session-state.js";
 import { buildRecentHistoryContext } from "../lib/recent-history.js";
 import type { ClaudeOptions } from "../lib/types.js";
 
@@ -96,8 +96,13 @@ export async function runAsk(
     }
   }
 
-  // Inject recent chat history on any new session (no active resume)
-  if (!resumeSessionId && opts.historyDir) {
+  // Inject recent chat history on new sessions or idle sessions (>30 min inactive)
+  const sessionIdleMinutes = resumeSessionId
+    ? await getSessionIdleMinutes(resumeSessionId)
+    : Infinity;
+  const shouldInjectHistory = opts.historyDir && (!resumeSessionId || sessionIdleMinutes > 30);
+
+  if (shouldInjectHistory) {
     const recentHistory = await buildRecentHistoryContext(opts.historyDir as string);
     if (recentHistory) {
       contextParts.unshift(recentHistory);
