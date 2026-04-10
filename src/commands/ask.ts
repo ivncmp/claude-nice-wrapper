@@ -2,11 +2,12 @@ import { Command } from "commander";
 import chalk from "chalk";
 import { execClaude, readStdin } from "../claude.js";
 import { addHistoryEntry } from "../lib/history-store.js";
+import { addChatLog, buildDayChatContext } from "../lib/chat-log-store.js";
+import { buildWorkspaceContext } from "../lib/workspace-store.js";
 import { buildMemoryContext } from "../lib/memory-store.js";
 import { buildLifeContext } from "../lib/life-store.js";
 import { loadConfig } from "../lib/config.js";
-import { getSessionTokens, updateSessionTokens, getSessionIdleMinutes } from "../lib/session-state.js";
-import { buildRecentHistoryContext } from "../lib/recent-history.js";
+import { getSessionTokens, updateSessionTokens } from "../lib/session-state.js";
 import type { ClaudeOptions } from "../lib/types.js";
 
 export function createAskCommand(): Command {
@@ -25,7 +26,6 @@ export function createAskCommand(): Command {
     .option("--raw", "Print raw JSON response")
     .option("--token-footer", "Append token usage footer to response text")
     .option("--max-session-tokens <n>", "Reset session if context exceeds this token count", parseInt)
-    .option("--history-dir <path>", "Openclaw sessions dir to inject recent history on reset")
     .option("-c, --continue", "Continue last conversation")
     .option("-r, --resume <id>", "Resume a specific session")
     .action(async (promptParts: string[], opts) => {
@@ -59,8 +59,13 @@ export async function runAsk(
       : stdinContent;
   }
 
-  // Build memory + life context
+  // Build context: workspace bootstrap files first (highest priority)
   const contextParts: string[] = [];
+
+  const workspaceCtx = await buildWorkspaceContext();
+  if (workspaceCtx) {
+    contextParts.push(workspaceCtx);
+  }
 
   if (opts.memory !== false) {
     const memoryKeys =
@@ -96,17 +101,10 @@ export async function runAsk(
     }
   }
 
-  // Inject recent chat history on new sessions or idle sessions (>30 min inactive)
-  const sessionIdleMinutes = resumeSessionId
-    ? await getSessionIdleMinutes(resumeSessionId)
-    : Infinity;
-  const shouldInjectHistory = opts.historyDir && (!resumeSessionId || sessionIdleMinutes > 30);
-
-  if (shouldInjectHistory) {
-    const recentHistory = await buildRecentHistoryContext(opts.historyDir as string);
-    if (recentHistory) {
-      contextParts.unshift(recentHistory);
-    }
+  // Always inject today's full conversation as context
+  const dayChatCtx = await buildDayChatContext();
+  if (dayChatCtx) {
+    contextParts.unshift(dayChatCtx);
   }
 
   const appendSystemPrompt = contextParts.length > 0
@@ -119,12 +117,13 @@ export async function runAsk(
     maxTurns: (opts.maxTurns as number) ?? config.defaults.maxTurns,
     maxBudgetUsd: opts.maxBudgetUsd as number | undefined,
     systemPrompt: opts.systemPrompt as string | undefined,
-    appendSystemPrompt: (resumeSessionId && !shouldInjectHistory) ? undefined : appendSystemPrompt,
+    appendSystemPrompt,
     resumeSessionId,
     continueSession: opts.continue as boolean | undefined,
   };
 
   const result = await execClaude(claudeOpts);
+  const resultText = result.result;
 
   // Persist token count for this session
   if (result.sessionId && result.usage) {
@@ -167,4 +166,7 @@ export async function runAsk(
       model: (opts.model as string) ?? config.defaults.model,
     });
   }
+
+  // Save human-readable chat log to ~/life/chats/
+  void addChatLog(promptText, resultText);
 }
