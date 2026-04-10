@@ -54,6 +54,6 @@ export async function addChatLog(
   if (!userMsg || !assistantMsg) return;
 
   await mkdir(CHATS_DIR, { recursive: true });
-  const entry = `Yo: ${userMsg}\nCaricato: ${assistantMsg}\n\n`;
+  const entry = `Yo: ${userMsg}\nAssistant: ${assistantMsg}\n\n`;
   await appendFile(getTodayFile(), entry, "utf-8");
 }
