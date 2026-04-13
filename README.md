@@ -1,14 +1,16 @@
 # cw - Claude Wrapper
 
-A CLI wrapper around `claude --print` that adds **persistent memory**, **life/PARA knowledge injection**, **conversation history**, **interactive chat**, and **YAML prompt templates** on top of the Claude Code CLI.
+A CLI wrapper around `claude --print` that adds **persistent memory**, **context injection**, **conversation history**, **interactive chat**, and **YAML prompt templates** on top of the Claude Code CLI.
 
-Every prompt you send through `cw` is automatically enriched with personal context before reaching Claude. Memory snippets, life knowledge, workspace identity files, and today's conversation log are all assembled and injected as system prompt context — so Claude always knows who you are and what you've been talking about.
+Every prompt sent through `cw` is automatically enriched with context before reaching Claude. Memory snippets, a personal knowledge base (PARA), workspace identity files, and today's conversation log are assembled and injected as system prompt context — so Claude always knows what you've been working on.
+
+> **Note:** Some optional integrations (workspace bootstrap files, daily chat log, PARA knowledge base, semantic search) require specific directory layouts. All of them are optional — `cw` works without any of them.
 
 ## Requirements
 
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and on PATH
 - Node.js 18+
-- Python 3 (optional, for semantic life/PARA search)
+- Python 3 (optional, for semantic PARA/life search)
 
 ## Install
 
@@ -28,7 +30,7 @@ npm install && npm run build && npm link
 
 ## Commands
 
-### `cw <prompt>` - Quick prompt (shorthand for `cw ask`)
+### `cw <prompt>` — Quick prompt (shorthand for `cw ask`)
 
 ```bash
 cw "explain this error"
@@ -39,11 +41,11 @@ cw -r abc123 "follow up"              # resume specific session
 
 Piped stdin is appended to the prompt separated by `---`.
 
-### `cw ask <prompt>` - Single-shot prompt
+### `cw ask <prompt>` — Single-shot prompt
 
 Same as the bare `cw <prompt>` but as an explicit subcommand. Accepts all flags.
 
-### `cw chat` - Interactive conversation
+### `cw chat` — Interactive conversation
 
 Opens a readline REPL for multi-turn conversation. Memory and life context are injected on the first turn only; subsequent turns use `--resume` to maintain the session.
 
@@ -56,7 +58,7 @@ cw chat -m claude-3-opus   # use a specific model
 
 Type `exit` or `quit` (or Ctrl+C) to end the session. The session ID is saved to `~/.claude-wrapper/current-session.json` for `-c` to pick up later.
 
-### `cw memory` - Persistent memory snippets
+### `cw memory` — Persistent memory snippets
 
 Named markdown snippets stored in `~/.claude-wrapper/memory/`. By default, **all memory snippets are injected into every prompt** as system context, up to a configurable character limit.
 
@@ -69,11 +71,11 @@ cw memory search "billing"          # search by key name or content
 cw memory delete coding-style       # remove a snippet
 ```
 
-Keys are slugified for filenames (e.g. `coding-style` becomes `coding-style.md`). Memory is truncated to `memory.maxInjectionChars` (default: **4000 chars**) when injected.
+Keys are slugified for filenames (e.g. `coding-style` → `coding-style.md`). Memory is truncated to `memory.maxInjectionChars` (default: **4,000 chars**) when injected.
 
 Use `--no-memory` to skip injection, or `--memory key1,key2` to inject only specific keys.
 
-### `cw template` - Reusable YAML prompt templates
+### `cw template` — Reusable YAML prompt templates
 
 Templates are YAML files with `{{variable}}` placeholders, stored in `~/.claude-wrapper/templates/`.
 
@@ -93,9 +95,9 @@ name: review
 description: Code review prompt
 prompt: |
   Review the following code for bugs, security issues, and style:
-  
+
   {{code}}
-  
+
   Focus on: {{focus}}
 variables:
   - name: code
@@ -110,7 +112,7 @@ claudeOptions:
 
 Variable sources: `stdin` (from pipe), `arg`, or `flag` (from `--var key=value`). Unresolved optional variables are silently removed from the rendered prompt.
 
-### `cw history` - Prompt/response history
+### `cw history` — Prompt/response history
 
 Every prompt and response is saved to an append-only JSONL file at `~/.claude-wrapper/history.jsonl`. Each entry includes: prompt, response, session ID, cost, duration, model, and timestamp.
 
@@ -125,7 +127,7 @@ cw history clear --before 2024-01-01  # clear entries before a date
 
 Use `--no-history` to skip saving a particular prompt.
 
-### `cw config` - Configuration
+### `cw config` — Configuration
 
 Configuration is stored in `~/.claude-wrapper/config.json`. Supports dot-notation for nested keys.
 
@@ -164,24 +166,19 @@ cw config get memory.autoInject
 
 ---
 
-## Context injection (how it all works)
+## Context Injection
 
-Every time you run `cw`, multiple context sources are assembled and injected into Claude via `--append-system-prompt`. This happens automatically and transparently. Here's what gets injected and in what order:
+Every time you run `cw`, multiple context sources are assembled and injected into Claude via `--append-system-prompt`. This happens automatically and transparently. Sources are injected in priority order (highest first):
 
-### 1. Day chat log (highest priority, injected first)
+### 1. Day chat log (highest priority)
 
-A human-readable log of today's conversations is maintained at `~/life/chats/YYYY-MM-DD.md`. Every exchange is appended in the format:
+A human-readable log of today's conversations. Every exchange is appended automatically. On each new prompt, today's full chat log is prepended to the context so Claude has continuity across your session.
 
-```
-Yo: <user message>
-Assistant: <assistant response>
-```
+**Storage:** configurable via `chatLog.dir` (currently hardcoded to `~/life/chats/YYYY-MM-DD.md` — see Refactoring).
 
-On each new prompt, today's full chat log is loaded and prepended to the context so Claude has continuity of what you've discussed today. Messages coming from Openclaw have their metadata blocks (untrusted metadata JSON) stripped before logging.
+### 2. Workspace bootstrap files (optional)
 
-### 2. Workspace identity (from `~/.openclaw/workspace/`)
-
-Bootstrap files that define the assistant's personality and the user's profile:
+Bootstrap files that define the assistant's personality and the user's profile. Expected files (all optional, silently skipped if missing):
 
 | File | Purpose |
 |------|---------|
@@ -190,68 +187,55 @@ Bootstrap files that define the assistant's personality and the user's profile:
 | `USER.md` | User profile information |
 | `MEMORY.md` | System-level memory |
 
-These are read from `~/.openclaw/workspace/` and injected in order, up to **16,000 chars** total. Missing files are silently skipped.
+**Storage:** currently hardcoded to `~/.openclaw/workspace/` — see Refactoring for making this configurable.
 
-### 3. Memory snippets (from `~/.claude-wrapper/memory/`)
+Injected in order, up to **16,000 chars** total.
 
-All your saved memory snippets (or a filtered subset via `--memory key1,key2`), up to **4,000 chars** (configurable via `memory.maxInjectionChars`).
+### 3. Memory snippets
 
-### 4. Life/PARA knowledge base (from `~/life/`)
+All saved memory snippets (or a filtered subset via `--memory key1,key2`), up to **4,000 chars** (configurable via `memory.maxInjectionChars`).
 
-Your personal knowledge base organized using the [PARA method](https://fortelabs.com/blog/para/) (Projects, Areas, Resources, Archive). The system scans:
+### 4. Life/PARA knowledge base (optional)
+
+A personal knowledge base organized using the [PARA method](https://fortelabs.com/blog/para/) (Projects, Areas, Resources). Configure its location via `cw config set life.dir /path/to/your/life`. Expected layout:
 
 ```
-~/life/
-  projects/
-    <project-name>/summary.md
-  areas/
-    <area-name>/summary.md
-    people/
-      <person-name>/summary.md
-    systems/
-      <system-name>/summary.md
-  resources/
-    <resource-name>/summary.md
+<life.dir>/
+  index.md                   # overview (optional)
+  projects/<name>/summary.md
+  areas/<name>/summary.md
+  resources/<name>/summary.md
 ```
 
-Each entity is a folder with a `summary.md` file. The system has **two modes**:
+Two modes:
+- **Semantic search** (when a query is available): runs `scripts/search_facts.py` to find relevant entity summaries + facts
+- **Full scan** (fallback): reads all `summary.md` files in order; each truncated to 1,500 chars
 
-- **Semantic search** (when a query/prompt is available): Runs `scripts/search_facts.py` to find entities relevant to your prompt. Returns matching entity summaries + top relevant facts. The "owner" entity (identified by `category: "owner"` in its `items.json`) is always included for identity resolution.
-
-- **Full scan** (fallback, no query or search fails): Reads `~/life/index.md` as overview, then scans all `summary.md` files in order. Each summary is truncated to 1,500 chars.
-
-Life context is capped at **12,000 chars** (configurable via `life.maxInjectionChars`). Use `--no-life` to skip, or `cw config set life.autoInject false` to disable globally.
+Capped at **12,000 chars** (configurable via `life.maxInjectionChars`). Disable with `--no-life` or `cw config set life.autoInject false`.
 
 ### Context assembly
 
-All parts are joined with `---` separators and passed as a single `--append-system-prompt` argument:
-
-```
-[Day chat log] --- [Workspace identity] --- [Memory snippets] --- [Life/PARA context]
-```
-
-In **chat mode**, this injection happens on the **first turn only**. Subsequent turns use `--resume` to maintain the session, so context is already established.
+All parts are joined with `---` separators and passed as a single `--append-system-prompt` argument. In **chat mode**, injection happens on the **first turn only**; subsequent turns use `--resume`.
 
 ---
 
-## Session management
+## Session Management
 
 ### Session tokens and auto-reset
 
-`cw` tracks token usage per session in `~/.claude-wrapper/session-state.json`. When using `--max-session-tokens <n>` with `--resume`, if the session has exceeded the token threshold, the resume is dropped and a fresh session starts automatically. This prevents runaway context growth in long-running sessions.
+`cw` tracks token usage per session in `~/.claude-wrapper/session-state.json`. When using `--max-session-tokens <n>`, if the session has exceeded the token threshold, the resume is dropped and a fresh session starts automatically.
 
 ```bash
-# Auto-reset after 100k tokens
 cw -r my-session --max-session-tokens 100000 "next question"
 ```
 
 ### Recent history on reset
 
-When a session resets (via `--history-dir`), recent user messages from Claude's JSONL session files can be extracted and injected to maintain conversational continuity. Only user messages from the last hour are included (up to 3,000 chars), with Telegram metadata stripped.
+When a session resets (via `--history-dir <path>`), recent user messages from Claude's JSONL session files are extracted and injected for continuity. Only messages from the last hour are included (up to 3,000 chars).
 
 ---
 
-## All flags reference
+## All Flags
 
 | Flag | Commands | Description |
 |------|----------|-------------|
@@ -269,11 +253,11 @@ When a session resets (via `--history-dir`), recent user messages from Claude's 
 | `--max-turns <n>` | ask, chat | Maximum agent turns per invocation |
 | `--max-budget-usd <n>` | ask | Maximum spend in USD for this call |
 | `--max-session-tokens <n>` | ask | Reset session if total tokens exceed this |
-| `--history-dir <path>` | ask | Openclaw sessions dir for recent history on reset |
+| `--history-dir <path>` | ask | Sessions directory for recent history injection on reset |
 
 ---
 
-## Data storage
+## Data Storage
 
 ```
 ~/.claude-wrapper/
@@ -281,23 +265,20 @@ When a session resets (via `--history-dir`), recent user messages from Claude's 
   history.jsonl            # append-only prompt/response history
   session-state.json       # per-session token counts
   current-session.json     # last chat session ID (for -c flag)
-  debug.log                # debug output from life-store
+  debug.log                # debug output from life semantic search
   memory/                  # named memory snippets (*.md)
   templates/               # prompt templates (*.yaml)
-
-~/.openclaw/workspace/
-  IDENTITY.md              # assistant identity
-  SOUL.md                  # personality/tone
-  USER.md                  # user profile
-  MEMORY.md                # system memory
-
-~/life/
-  index.md                 # life overview
-  chats/YYYY-MM-DD.md      # daily conversation logs
-  projects/*/summary.md    # PARA: project summaries
-  areas/*/summary.md       # PARA: area summaries
-  resources/*/summary.md   # PARA: resource summaries
 ```
+
+Optional integrations (paths currently hardcoded, to be made configurable):
+
+```
+~/.openclaw/workspace/     # workspace bootstrap files (IDENTITY, SOUL, USER, MEMORY)
+~/life/chats/              # daily conversation logs (YYYY-MM-DD.md)
+<life.dir>/                # PARA knowledge base (set via config)
+```
+
+---
 
 ## License
 
