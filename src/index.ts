@@ -4,9 +4,10 @@ import { Command } from 'commander';
 import { createAskCommand, runAsk } from './commands/ask.js';
 import { createChatCommand } from './commands/chat.js';
 import { createHistoryCommand } from './commands/history.js';
+import { createInitCommand, requireInit } from './commands/init.js';
 import { createMemoryCommand } from './commands/memory.js';
 import { createTemplateCommand } from './commands/template.js';
-import { loadConfig, setConfigValue, getConfigValue } from './lib/config.js';
+import { getConfigValue, loadConfig, setConfigValue } from './lib/config.js';
 
 const program = new Command();
 
@@ -15,14 +16,24 @@ program
   .description('CLI wrapper for claude -p with history, memory, chat, and templates')
   .version('0.1.0');
 
-// Subcommands
-program.addCommand(createAskCommand());
-program.addCommand(createChatCommand());
-program.addCommand(createHistoryCommand());
-program.addCommand(createMemoryCommand());
-program.addCommand(createTemplateCommand());
+// Init does not require initialization
+program.addCommand(createInitCommand());
 
-// Config command
+// All other commands require `cw init` to have been run
+const guarded = (cmd: Command): Command => {
+  cmd.hook('preAction', async () => {
+    await requireInit();
+  });
+  return cmd;
+};
+
+program.addCommand(guarded(createAskCommand()));
+program.addCommand(guarded(createChatCommand()));
+program.addCommand(guarded(createHistoryCommand()));
+program.addCommand(guarded(createMemoryCommand()));
+program.addCommand(guarded(createTemplateCommand()));
+
+// Config command — guarded
 const configCmd = new Command('config').description('Manage configuration');
 
 configCmd
@@ -50,7 +61,7 @@ configCmd.action(async () => {
   console.log(JSON.stringify(config, null, 2));
 });
 
-program.addCommand(configCmd);
+program.addCommand(guarded(configCmd));
 
 // Default behavior: if args look like a prompt (not a known command), run ask
 program
@@ -73,6 +84,7 @@ program
       program.help();
       return;
     }
+    await requireInit();
     try {
       await runAsk(promptParts, opts);
     } catch (err) {

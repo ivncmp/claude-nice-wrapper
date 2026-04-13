@@ -11,6 +11,10 @@ const DEFAULT_BOOTSTRAP_FILES = [
   { file: 'MEMORY.md', header: '## System Memory' },
 ];
 
+/**
+ * Read workspace bootstrap files (IDENTITY.md, SOUL.md, etc.) from the configured directory
+ * and assemble them into a context string. Returns empty if workspace is disabled.
+ */
 export async function buildWorkspaceContext(maxChars?: number): Promise<string> {
   const config = await loadConfig();
   const ws = config.workspace;

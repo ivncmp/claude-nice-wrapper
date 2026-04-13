@@ -14,6 +14,7 @@ function nameToFile(name: string): string {
   return join(getTemplateDir(), `${name}.yaml`);
 }
 
+/** Load a template by name from disk. Returns null if not found. */
 export async function getTemplate(name: string): Promise<TemplateDefinition | null> {
   try {
     const raw = await readFile(nameToFile(name), 'utf-8');
@@ -23,11 +24,13 @@ export async function getTemplate(name: string): Promise<TemplateDefinition | nu
   }
 }
 
+/** Save a template definition to disk as a YAML file. */
 export async function saveTemplate(template: TemplateDefinition): Promise<void> {
   await ensureDataDir();
   await writeFile(nameToFile(template.name), stringify(template), 'utf-8');
 }
 
+/** List all saved templates, parsed from YAML files in the templates directory. */
 export async function listTemplates(): Promise<TemplateDefinition[]> {
   try {
     const files = await readdir(getTemplateDir());
@@ -43,6 +46,7 @@ export async function listTemplates(): Promise<TemplateDefinition[]> {
   }
 }
 
+/** Delete a template by name. Returns true if it existed. */
 export async function deleteTemplate(name: string): Promise<boolean> {
   try {
     await unlink(nameToFile(name));
@@ -52,6 +56,10 @@ export async function deleteTemplate(name: string): Promise<boolean> {
   }
 }
 
+/**
+ * Render a template by replacing `{{variable}}` placeholders with provided values.
+ * Warns to stderr about unresolved variables before silently removing them.
+ */
 export function renderTemplate(template: TemplateDefinition, vars: Record<string, string>): string {
   let prompt = template.prompt;
   for (const [key, value] of Object.entries(vars)) {

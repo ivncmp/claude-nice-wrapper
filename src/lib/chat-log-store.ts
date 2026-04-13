@@ -8,6 +8,7 @@ function getTodayFile(dir: string): string {
   return join(dir, `${today}.md`);
 }
 
+/** Read today's chat log file and return it as a context string. Returns empty if disabled. */
 export async function buildDayChatContext(): Promise<string> {
   const config = await loadConfig();
   const cl = config.chatLog;
@@ -25,6 +26,7 @@ export async function buildDayChatContext(): Promise<string> {
   }
 }
 
+/** Append a user/assistant exchange to today's daily chat log file. */
 export async function addChatLog(userPrompt: string, assistantResponse: string): Promise<void> {
   const config = await loadConfig();
   const cl = config.chatLog;

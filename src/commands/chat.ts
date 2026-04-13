@@ -32,6 +32,7 @@ async function saveSession(session: SessionInfo): Promise<void> {
   );
 }
 
+/** Create the `cw chat` Commander command for interactive conversations. */
 export function createChatCommand(): Command {
   return new Command('chat')
     .description('Start an interactive conversation with Claude')
@@ -51,6 +52,7 @@ export function createChatCommand(): Command {
     });
 }
 
+/** Run the interactive chat REPL: readline loop with session tracking and context injection. */
 async function runChat(opts: Record<string, unknown>): Promise<void> {
   const config = await loadConfig();
 

@@ -18,11 +18,13 @@ function keyToFile(key: string): string {
   return join(getMemoryDir(), `${slugify(key)}.md`);
 }
 
+/** Save a named memory snippet to disk as a markdown file. */
 export async function setMemory(key: string, value: string): Promise<void> {
   await ensureDataDir();
   await writeFile(keyToFile(key), value, 'utf-8');
 }
 
+/** Read a memory snippet by key. Returns null if not found. */
 export async function getMemory(key: string): Promise<string | null> {
   try {
     return await readFile(keyToFile(key), 'utf-8');
@@ -31,6 +33,7 @@ export async function getMemory(key: string): Promise<string | null> {
   }
 }
 
+/** List all stored memory keys (derived from .md filenames). */
 export async function listMemoryKeys(): Promise<string[]> {
   try {
     const files = await readdir(getMemoryDir());
@@ -40,6 +43,7 @@ export async function listMemoryKeys(): Promise<string[]> {
   }
 }
 
+/** Search memory snippets by key name or content (case-insensitive substring match). */
 export async function searchMemory(query: string): Promise<{ key: string; content: string }[]> {
   const keys = await listMemoryKeys();
   const lower = query.toLowerCase();
@@ -54,6 +58,7 @@ export async function searchMemory(query: string): Promise<{ key: string; conten
   return results;
 }
 
+/** Delete a memory snippet by key. Returns true if it existed. */
 export async function deleteMemory(key: string): Promise<boolean> {
   try {
     await unlink(keyToFile(key));
@@ -63,6 +68,11 @@ export async function deleteMemory(key: string): Promise<boolean> {
   }
 }
 
+/**
+ * Assemble memory snippets into a single context string for system prompt injection.
+ * If `keys` is provided, only those snippets are included; otherwise all are used.
+ * Output is truncated to `maxChars`.
+ */
 export async function buildMemoryContext(keys?: string[], maxChars = 4000): Promise<string> {
   const allKeys = keys?.length ? keys : await listMemoryKeys();
   if (allKeys.length === 0) return '';

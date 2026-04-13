@@ -9,6 +9,7 @@ import { addHistoryEntry } from '../lib/history-store.js';
 import { getSessionTokens, updateSessionTokens } from '../lib/session-state.js';
 import type { ClaudeOptions } from '../lib/types.js';
 
+/** Create the `cw ask` Commander command with all CLI options. */
 export function createAskCommand(): Command {
   return new Command('ask')
     .description('Send a prompt to Claude')
@@ -41,6 +42,10 @@ export function createAskCommand(): Command {
     });
 }
 
+/**
+ * Execute a single-shot prompt: assemble context, call Claude, display output,
+ * and persist to history and chat log.
+ */
 export async function runAsk(promptParts: string[], opts: Record<string, unknown>): Promise<void> {
   const config = await loadConfig();
   const stdinContent = await readStdin();

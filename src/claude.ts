@@ -3,6 +3,11 @@ import { spawn } from 'node:child_process';
 import { loadConfig } from './lib/config.js';
 import type { ClaudeOptions, ClaudeResult, ClaudeUsage } from './lib/types.js';
 
+/**
+ * Execute a prompt via the Claude CLI (`claude --print`).
+ * Spawns the configured binary, passes all options as flags, and parses
+ * the JSON response into a structured {@link ClaudeResult}.
+ */
 export async function execClaude(options: ClaudeOptions): Promise<ClaudeResult> {
   const config = await loadConfig();
   const args = buildArgs(options, config.claude?.skipPermissions ?? false);
@@ -88,6 +93,7 @@ export async function execClaude(options: ClaudeOptions): Promise<ClaudeResult> 
   });
 }
 
+/** Translate {@link ClaudeOptions} into CLI argument array for `claude --print`. */
 function buildArgs(options: ClaudeOptions, skipPermissions: boolean): string[] {
   const args = ['--print', '--output-format', 'json'];
 
@@ -139,6 +145,11 @@ function buildArgs(options: ClaudeOptions, skipPermissions: boolean): string[] {
   return args;
 }
 
+/**
+ * Read piped stdin content, if available.
+ * Returns an empty string when stdin is a TTY (interactive terminal).
+ * Times out after 5 seconds to prevent hanging on broken pipes.
+ */
 export async function readStdin(): Promise<string> {
   if (process.stdin.isTTY) {
     return '';

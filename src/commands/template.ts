@@ -16,6 +16,7 @@ import type { TemplateDefinition } from '../lib/types.js';
 
 import { runAsk } from './ask.js';
 
+/** Create the `cw template` Commander command with list/show/add/run/delete subcommands. */
 export function createTemplateCommand(): Command {
   const cmd = new Command('template').description('Manage prompt templates');
 

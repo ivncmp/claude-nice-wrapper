@@ -1,14 +1,15 @@
 import { randomUUID } from 'node:crypto';
-import { appendFile, readFile, writeFile } from 'node:fs/promises';
+import { appendFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { getDataDir, ensureDataDir, loadConfig } from './config.js';
+import { getDataDir, ensureDataDir, loadConfig, atomicWriteFile } from './config.js';
 import type { HistoryEntry } from './types.js';
 
 function getHistoryPath(): string {
   return join(getDataDir(), 'history.jsonl');
 }
 
+/** Append a new entry to the JSONL history file. Prunes oldest entries if maxEntries is exceeded. */
 export async function addHistoryEntry(
   entry: Omit<HistoryEntry, 'id' | 'timestamp'>,
 ): Promise<HistoryEntry> {
@@ -28,10 +29,9 @@ export async function addHistoryEntry(
       const all = await readLines();
       if (all.length > maxEntries) {
         const kept = all.slice(-maxEntries);
-        await writeFile(
+        await atomicWriteFile(
           getHistoryPath(),
           kept.map((e) => JSON.stringify(e)).join('\n') + '\n',
-          'utf-8',
         );
       }
     }
@@ -44,16 +44,19 @@ export async function addHistoryEntry(
   return full;
 }
 
+/** Return the most recent `limit` history entries, newest first. */
 export async function listHistory(limit = 20): Promise<HistoryEntry[]> {
   const lines = await readLines();
   return lines.slice(-limit).reverse();
 }
 
+/** Find a history entry by full or prefix ID. Returns null if not found. */
 export async function getHistoryEntry(id: string): Promise<HistoryEntry | null> {
   const lines = await readLines();
   return lines.find((e) => e.id === id || e.id.startsWith(id)) ?? null;
 }
 
+/** Search history entries by prompt or response content (case-insensitive). */
 export async function searchHistory(query: string): Promise<HistoryEntry[]> {
   const lines = await readLines();
   const lower = query.toLowerCase();
@@ -62,20 +65,20 @@ export async function searchHistory(query: string): Promise<HistoryEntry[]> {
     .reverse();
 }
 
+/** Clear history entries. If `before` is given, only entries older than that date are removed. */
 export async function clearHistory(before?: string): Promise<number> {
   const lines = await readLines();
   if (!before) {
-    await writeFile(getHistoryPath(), '', 'utf-8');
+    await atomicWriteFile(getHistoryPath(), '');
     return lines.length;
   }
   const cutoff = new Date(before).getTime();
   if (isNaN(cutoff)) throw new Error(`Invalid date: "${before}"`);
   const kept = lines.filter((e) => new Date(e.timestamp).getTime() >= cutoff);
   const removed = lines.length - kept.length;
-  await writeFile(
+  await atomicWriteFile(
     getHistoryPath(),
     kept.map((e) => JSON.stringify(e)).join('\n') + (kept.length ? '\n' : ''),
-    'utf-8',
   );
   return removed;
 }

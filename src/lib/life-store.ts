@@ -75,6 +75,7 @@ async function searchRelevantEntities(
   return { entities, facts: results };
 }
 
+/** Recursively discover PARA entities (directories with summary.md) under projects/, areas/, resources/. */
 async function discoverEntities(lifeDir: string): Promise<LifeEntity[]> {
   const entities: LifeEntity[] = [];
 
@@ -118,6 +119,11 @@ async function discoverEntities(lifeDir: string): Promise<LifeEntity[]> {
   return entities;
 }
 
+/**
+ * Build PARA knowledge base context for system prompt injection.
+ * Uses semantic search when a query is provided, falls back to full scan.
+ * Returns empty if `life.dir` is not configured.
+ */
 export async function buildLifeContext(query?: string, maxChars?: number): Promise<string> {
   const config = await loadConfig();
   const lifeDir = config.life.dir;

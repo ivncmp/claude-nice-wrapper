@@ -4,6 +4,7 @@ import { buildMemoryContext } from './memory-store.js';
 import type { AppConfig } from './types.js';
 import { buildWorkspaceContext } from './workspace-store.js';
 
+/** Options controlling which context sources to include in the system prompt. */
 export interface ContextOptions {
   memory?: boolean | string[];
   life?: boolean;
@@ -12,6 +13,11 @@ export interface ContextOptions {
   lifeQuery?: string;
 }
 
+/**
+ * Assemble all context sources into a single `--append-system-prompt` string.
+ * Sources are included in priority order: day chat log, workspace, memory, life/PARA.
+ * Used by both `ask` and `chat` commands for consistent context injection.
+ */
 export async function buildSystemPromptContext(
   opts: ContextOptions,
   config: AppConfig,

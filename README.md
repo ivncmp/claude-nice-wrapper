@@ -1,10 +1,8 @@
-# cw - Claude Wrapper
+# cw — Claude Wrapper
 
 A CLI wrapper around `claude --print` that adds **persistent memory**, **context injection**, **conversation history**, **interactive chat**, and **YAML prompt templates** on top of the Claude Code CLI.
 
-Every prompt sent through `cw` is automatically enriched with context before reaching Claude. Memory snippets, a personal knowledge base (PARA), workspace identity files, and today's conversation log are assembled and injected as system prompt context — so Claude always knows what you've been working on.
-
-> **Note:** Some optional integrations (workspace bootstrap files, daily chat log, PARA knowledge base, semantic search) require specific directory layouts. All of them are optional — `cw` works without any of them.
+Every prompt sent through `cw` is automatically enriched with context before reaching Claude. Memory snippets, workspace identity files, a personal knowledge base (PARA), and today's conversation log are assembled and injected as system prompt context — so Claude always knows what you've been working on.
 
 ## Requirements
 
@@ -15,16 +13,28 @@ Every prompt sent through `cw` is automatically enriched with context before rea
 ## Install
 
 ```bash
-npm install -g claude-wrapper
+npm install -g claude-nice-wrapper
 ```
 
 Or for local development:
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/ivncmp/claude-nice-wrapper.git
 cd claude-nice-wrapper
 npm install && npm run build && npm link
 ```
+
+## Getting Started
+
+Run the setup wizard before first use:
+
+```bash
+cw init
+```
+
+This walks you through configuring Claude binary path, default model, optional integrations (workspace, chat log, PARA), and permission settings. All configuration is saved to `~/.claude-wrapper/config.json`.
+
+> **`cw init` is required.** Other commands will refuse to run until initialization is complete.
 
 ---
 
@@ -47,16 +57,16 @@ Same as the bare `cw <prompt>` but as an explicit subcommand. Accepts all flags.
 
 ### `cw chat` — Interactive conversation
 
-Opens a readline REPL for multi-turn conversation. Memory and life context are injected on the first turn only; subsequent turns use `--resume` to maintain the session.
+Opens a readline REPL for multi-turn conversation. Context is injected on every turn; subsequent turns use `--resume` to maintain the session.
 
 ```bash
 cw chat                    # new conversation
 cw chat -c                 # continue last conversation
 cw chat -r <session-id>    # resume a specific session
-cw chat -m claude-3-opus   # use a specific model
+cw chat -m claude-sonnet-4-20250514   # use a specific model
 ```
 
-Type `exit` or `quit` (or Ctrl+C) to end the session. The session ID is saved to `~/.claude-wrapper/current-session.json` for `-c` to pick up later.
+Type `exit` or `quit` (or Ctrl+C) to end the session.
 
 ### `cw memory` — Persistent memory snippets
 
@@ -70,8 +80,6 @@ cw memory get coding-style          # show a specific snippet
 cw memory search "billing"          # search by key name or content
 cw memory delete coding-style       # remove a snippet
 ```
-
-Keys are slugified for filenames (e.g. `coding-style` → `coding-style.md`). Memory is truncated to `memory.maxInjectionChars` (default: **4,000 chars**) when injected.
 
 Use `--no-memory` to skip injection, or `--memory key1,key2` to inject only specific keys.
 
@@ -110,15 +118,15 @@ claudeOptions:
   maxTurns: 3
 ```
 
-Variable sources: `stdin` (from pipe), `arg`, or `flag` (from `--var key=value`). Unresolved optional variables are silently removed from the rendered prompt.
+Variable sources: `stdin` (from pipe), `arg`, or `flag` (from `--var key=value`). Unresolved optional variables are warned about and silently removed.
 
 ### `cw history` — Prompt/response history
 
-Every prompt and response is saved to an append-only JSONL file at `~/.claude-wrapper/history.jsonl`. Each entry includes: prompt, response, session ID, cost, duration, model, and timestamp.
+Every prompt and response is saved to an append-only JSONL file. Each entry includes: prompt, response, session ID, cost, duration, model, and timestamp. History is automatically pruned to `history.maxEntries` (default: 1,000).
 
 ```bash
 cw history list                     # last 20 entries
-cw history list -n 50               # last 50 entries
+cw history list -l 50               # last 50 entries
 cw history show <id>                # full details of an entry
 cw history search "keyword"         # search prompts and responses
 cw history clear                    # clear all history
@@ -139,29 +147,12 @@ cw config set life.autoInject false
 cw config get memory.autoInject
 ```
 
-#### Default configuration
+### `cw init` — Setup wizard
 
-```json
-{
-  "memory": {
-    "autoInject": true,
-    "defaultKeys": [],
-    "maxInjectionChars": 4000
-  },
-  "life": {
-    "autoInject": true,
-    "dir": "",
-    "maxInjectionChars": 12000
-  },
-  "history": {
-    "maxEntries": 1000
-  },
-  "defaults": {
-    "model": null,
-    "maxTurns": null,
-    "outputFormat": null
-  }
-}
+Run at any time to reconfigure settings interactively.
+
+```bash
+cw init
 ```
 
 ---
@@ -174,11 +165,16 @@ Every time you run `cw`, multiple context sources are assembled and injected int
 
 A human-readable log of today's conversations. Every exchange is appended automatically. On each new prompt, today's full chat log is prepended to the context so Claude has continuity across your session.
 
-**Storage:** configurable via `chatLog.dir` in config. Disabled by default — enable with `cw config set chatLog.enabled true` and `cw config set chatLog.dir /path/to/chats`.
+Enable with `cw init` or manually:
 
-### 2. Workspace bootstrap files (optional)
+```bash
+cw config set chatLog.enabled true
+cw config set chatLog.dir /path/to/chats
+```
 
-Bootstrap files that define the assistant's personality and the user's profile. Expected files (all optional, silently skipped if missing):
+### 2. Workspace bootstrap files
+
+Identity and personality files that define who the assistant is. Expected files (all optional, silently skipped if missing):
 
 | File | Purpose |
 |------|---------|
@@ -187,17 +183,26 @@ Bootstrap files that define the assistant's personality and the user's profile. 
 | `USER.md` | User profile information |
 | `MEMORY.md` | System-level memory |
 
-**Storage:** configurable via `workspace.dir` in config. Disabled by default — enable with `cw config set workspace.enabled true` and `cw config set workspace.dir /path/to/workspace`.
+Enable with `cw init` or manually:
 
-Injected in order, up to **16,000 chars** total.
+```bash
+cw config set workspace.enabled true
+cw config set workspace.dir /path/to/workspace
+```
 
 ### 3. Memory snippets
 
 All saved memory snippets (or a filtered subset via `--memory key1,key2`), up to **4,000 chars** (configurable via `memory.maxInjectionChars`).
 
-### 4. Life/PARA knowledge base (optional)
+### 4. Life/PARA knowledge base
 
-A personal knowledge base organized using the [PARA method](https://fortelabs.com/blog/para/) (Projects, Areas, Resources). Configure its location via `cw config set life.dir /path/to/your/life`. Expected layout:
+A personal knowledge base organized using the [PARA method](https://fortelabs.com/blog/para/) (Projects, Areas, Resources). Configure its location:
+
+```bash
+cw config set life.dir /path/to/your/knowledge-base
+```
+
+Expected layout:
 
 ```
 <life.dir>/
@@ -208,14 +213,14 @@ A personal knowledge base organized using the [PARA method](https://fortelabs.co
 ```
 
 Two modes:
-- **Semantic search** (when a query is available): runs `scripts/search_facts.py` to find relevant entity summaries + facts
-- **Full scan** (fallback): reads all `summary.md` files in order; each truncated to 1,500 chars
+- **Semantic search** (when a query is available): runs a bundled Python script to find relevant entity summaries + facts
+- **Full scan** (fallback): reads all `summary.md` files; each truncated to `life.maxEntityChars` (default: 1,500 chars)
 
 Capped at **12,000 chars** (configurable via `life.maxInjectionChars`). Disable with `--no-life` or `cw config set life.autoInject false`.
 
 ### Context assembly
 
-All parts are joined with `---` separators and passed as a single `--append-system-prompt` argument. In **chat mode**, injection happens on the **first turn only**; subsequent turns use `--resume`.
+All parts are joined with `---` separators and passed as a single `--append-system-prompt` argument. Both `ask` and `chat` commands use the same shared context builder for consistent behavior.
 
 ---
 
@@ -223,11 +228,13 @@ All parts are joined with `---` separators and passed as a single `--append-syst
 
 ### Session tokens and auto-reset
 
-`cw` tracks token usage per session in `~/.claude-wrapper/session-state.json`. When using `--max-session-tokens <n>`, if the session has exceeded the token threshold, the resume is dropped and a fresh session starts automatically.
+`cw` tracks token usage per session. When using `--max-session-tokens <n>`, if the session has exceeded the token threshold, the resume is dropped and a fresh session starts automatically.
 
 ```bash
 cw -r my-session --max-session-tokens 100000 "next question"
 ```
+
+Sessions older than 7 days are automatically pruned.
 
 ---
 
@@ -252,6 +259,43 @@ cw -r my-session --max-session-tokens 100000 "next question"
 
 ---
 
+## Configuration Reference
+
+All settings are configured via `cw init` or `cw config set <key> <value>`.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `claude.bin` | `"claude"` | Path to the Claude CLI binary |
+| `claude.skipPermissions` | `false` | Add `--dangerously-skip-permissions` to every call |
+| `defaults.model` | — | Default model for all commands |
+| `defaults.maxTurns` | — | Default max agent turns |
+| `memory.autoInject` | `true` | Auto-inject memory snippets |
+| `memory.maxInjectionChars` | `4000` | Max chars for memory context |
+| `memory.defaultKeys` | `[]` | Only inject these keys (empty = all) |
+| `workspace.enabled` | `false` | Enable workspace context injection |
+| `workspace.dir` | `""` | Path to workspace bootstrap files |
+| `workspace.maxInjectionChars` | `16000` | Max chars for workspace context |
+| `chatLog.enabled` | `false` | Enable daily chat log |
+| `chatLog.dir` | `""` | Path to chat log directory |
+| `chatLog.userPrefix` | `"User:"` | Prefix for user messages in log |
+| `chatLog.assistantPrefix` | `"Assistant:"` | Prefix for assistant messages in log |
+| `life.autoInject` | `true` | Auto-inject PARA context |
+| `life.dir` | `""` | Path to PARA knowledge base (empty = disabled) |
+| `life.maxInjectionChars` | `12000` | Max chars for PARA context |
+| `life.maxEntityChars` | `1500` | Max chars per entity summary |
+| `life.pythonBin` | `"python3"` | Python binary for semantic search |
+| `history.maxEntries` | `1000` | Max history entries before pruning |
+| `debug` | `false` | Enable debug logging to `debug.log` |
+
+### Environment variables
+
+| Variable | Description |
+|----------|-------------|
+| `CW_DATA_DIR` | Override the data directory (default: `~/.claude-wrapper`) |
+| `LIFE_SEARCH_BIN` | Override the path to the Python search script |
+
+---
+
 ## Data Storage
 
 ```
@@ -260,12 +304,12 @@ cw -r my-session --max-session-tokens 100000 "next question"
   history.jsonl            # append-only prompt/response history
   session-state.json       # per-session token counts
   current-session.json     # last chat session ID (for -c flag)
-  debug.log                # debug output from life semantic search
+  debug.log                # debug output (when debug: true)
   memory/                  # named memory snippets (*.md)
   templates/               # prompt templates (*.yaml)
 ```
 
-Optional integrations (disabled by default, configure via `cw config`):
+Optional integrations (disabled by default, configure via `cw init`):
 
 ```
 <workspace.dir>/           # workspace bootstrap files (IDENTITY, SOUL, USER, MEMORY)

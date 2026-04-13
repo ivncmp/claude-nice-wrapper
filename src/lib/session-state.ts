@@ -1,7 +1,7 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { getDataDir } from './config.js';
+import { getDataDir, atomicWriteFile } from './config.js';
 
 interface SessionState {
   [sessionId: string]: {
@@ -24,14 +24,16 @@ async function loadState(): Promise<SessionState> {
 }
 
 async function saveState(state: SessionState): Promise<void> {
-  await writeFile(getStateFile(), JSON.stringify(state, null, 2), 'utf-8');
+  await atomicWriteFile(getStateFile(), JSON.stringify(state, null, 2));
 }
 
+/** Get the total token count for a given session. Returns 0 if session is unknown. */
 export async function getSessionTokens(sessionId: string): Promise<number> {
   const state = await loadState();
   return state[sessionId]?.totalTokens ?? 0;
 }
 
+/** Update token count for a session and prune sessions older than 7 days. */
 export async function updateSessionTokens(sessionId: string, totalTokens: number): Promise<void> {
   const state = await loadState();
   state[sessionId] = { totalTokens, updatedAt: new Date().toISOString() };

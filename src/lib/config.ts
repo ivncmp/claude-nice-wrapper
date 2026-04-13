@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -7,6 +7,7 @@ import type { AppConfig } from './types.js';
 const DATA_DIR = process.env.CW_DATA_DIR || join(homedir(), '.claude-wrapper');
 
 const DEFAULT_CONFIG: AppConfig = {
+  initialized: false,
   memory: {
     autoInject: true,
     defaultKeys: [],
@@ -48,16 +49,19 @@ const DEFAULT_CONFIG: AppConfig = {
   debug: false,
 };
 
+/** Returns the data directory path (`~/.claude-wrapper` or `CW_DATA_DIR`). */
 export function getDataDir(): string {
   return DATA_DIR;
 }
 
+/** Create the data directory and subdirectories (memory/, templates/) if they don't exist. */
 export async function ensureDataDir(): Promise<void> {
   await mkdir(DATA_DIR, { recursive: true });
   await mkdir(join(DATA_DIR, 'memory'), { recursive: true });
   await mkdir(join(DATA_DIR, 'templates'), { recursive: true });
 }
 
+/** Recursively merge two objects, preserving nested defaults when overrides are partial. */
 function deepMerge(
   defaults: Record<string, unknown>,
   overrides: Record<string, unknown>,
@@ -83,6 +87,7 @@ function deepMerge(
   return result;
 }
 
+/** Load config from disk, deep-merging with defaults for any missing keys. */
 export async function loadConfig(): Promise<AppConfig> {
   try {
     const raw = await readFile(join(DATA_DIR, 'config.json'), 'utf-8');
@@ -96,11 +101,23 @@ export async function loadConfig(): Promise<AppConfig> {
   }
 }
 
+/** Persist the full config to disk atomically. */
 export async function saveConfig(config: AppConfig): Promise<void> {
   await ensureDataDir();
-  await writeFile(join(DATA_DIR, 'config.json'), JSON.stringify(config, null, 2) + '\n', 'utf-8');
+  await atomicWriteFile(join(DATA_DIR, 'config.json'), JSON.stringify(config, null, 2) + '\n');
 }
 
+/**
+ * Write a file atomically by writing to a .tmp file first, then renaming.
+ * Prevents corruption from concurrent writes or interrupted processes.
+ */
+export async function atomicWriteFile(filePath: string, data: string): Promise<void> {
+  const tmp = filePath + '.tmp';
+  await writeFile(tmp, data, 'utf-8');
+  await rename(tmp, filePath);
+}
+
+/** Get a nested config value using dot notation (e.g. `"memory.maxInjectionChars"`). */
 export async function getConfigValue(key: string): Promise<unknown> {
   const config = await loadConfig();
   const parts = key.split('.');
@@ -115,6 +132,7 @@ export async function getConfigValue(key: string): Promise<unknown> {
   return current;
 }
 
+/** Set a nested config value using dot notation. Auto-parses booleans and numbers. */
 export async function setConfigValue(key: string, value: string): Promise<void> {
   const config = await loadConfig();
   const parts = key.split('.');
