@@ -1,29 +1,28 @@
-import { readFile, readdir, stat, appendFile } from "node:fs/promises";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { homedir } from "node:os";
-import { loadConfig } from "./config.js";
+import { execFile } from 'node:child_process';
+import { readFile, readdir, stat, appendFile } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
+
+import { getDataDir, loadConfig } from './config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-function debugLog(msg: string): void {
+let debugEnabled: boolean | null = null;
+
+async function debugLog(msg: string): Promise<void> {
+  if (debugEnabled === null) {
+    const config = await loadConfig();
+    debugEnabled = config.debug ?? false;
+  }
+  if (!debugEnabled) return;
   const line = `[${new Date().toISOString()}] ${msg}\n`;
-  appendFile(join(homedir(), ".claude-wrapper", "debug.log"), line).catch(() => {});
+  appendFile(join(getDataDir(), 'debug.log'), line).catch(() => {});
 }
 
 const execFileAsync = promisify(execFile);
 
-const SEARCH_SCRIPT = join(
-  __dirname,
-  "scripts",
-  "search_facts.py"
-);
-
-function getLifeDir(): string {
-  return join(homedir(), "life");
-}
+const SEARCH_SCRIPT = process.env.LIFE_SEARCH_BIN || join(__dirname, 'scripts', 'search_facts.py');
 
 interface LifeEntity {
   name: string;
@@ -46,14 +45,19 @@ interface SearchResult {
  */
 async function searchRelevantEntities(
   query: string,
-  limit: number = 10
+  lifeDir: string,
+  limit: number = 10,
 ): Promise<{ entities: string[]; facts: SearchResult[] }> {
-  const { stdout } = await execFileAsync("python3", [
+  const config = await loadConfig();
+  const pythonBin = config.life.pythonBin || 'python3';
+  const { stdout } = await execFileAsync(pythonBin, [
     SEARCH_SCRIPT,
     query,
-    "--json",
-    "--limit",
+    '--json',
+    '--limit',
     String(limit),
+    '--life-dir',
+    lifeDir,
   ]);
 
   const results: SearchResult[] = JSON.parse(stdout);
@@ -84,7 +88,7 @@ async function discoverEntities(lifeDir: string): Promise<LifeEntity[]> {
 
     for (const entry of entries) {
       const fullPath = join(dir, entry);
-      const summaryPath = join(fullPath, "summary.md");
+      const summaryPath = join(fullPath, 'summary.md');
 
       try {
         await stat(summaryPath);
@@ -100,63 +104,62 @@ async function discoverEntities(lifeDir: string): Promise<LifeEntity[]> {
           if (s.isDirectory()) {
             await scanDir(fullPath, `${collection}/${entry}`);
           }
-        } catch {
-          // skip
+        } catch (err) {
+          await debugLog(`scanDir: skipping ${fullPath}: ${err}`);
         }
       }
     }
   }
 
-  for (const topLevel of ["projects", "areas", "resources"]) {
+  for (const topLevel of ['projects', 'areas', 'resources']) {
     await scanDir(join(lifeDir, topLevel), topLevel);
   }
 
   return entities;
 }
 
-export async function buildLifeContext(
-  query?: string,
-  maxChars?: number
-): Promise<string> {
+export async function buildLifeContext(query?: string, maxChars?: number): Promise<string> {
   const config = await loadConfig();
+  const lifeDir = config.life.dir;
+  if (!lifeDir) return '';
+
   const limit = maxChars ?? config.life.maxInjectionChars;
-  const lifeDir = config.life.dir || getLifeDir();
-  debugLog(`buildLifeContext called — lifeDir: ${lifeDir}, query: ${query?.slice(0, 80)}, limit: ${limit}`);
+  await debugLog(
+    `buildLifeContext called — lifeDir: ${lifeDir}, query: ${query?.slice(0, 80)}, limit: ${limit}`,
+  );
 
   // If we have a query, use PARA search for targeted context
   if (query) {
     try {
       return await buildSearchedLifeContext(query, lifeDir, limit);
     } catch (err: unknown) {
-      debugLog(`PARA search failed, falling back to full scan: ${err}`);
+      await debugLog(`PARA search failed, falling back to full scan: ${err}`);
     }
   } else {
-    debugLog(`No query provided, skipping search`);
+    await debugLog(`No query provided, skipping search`);
   }
 
   // Fallback: full scan (no query, or search failed)
   try {
     const result = await buildFullLifeContext(lifeDir, limit);
-    debugLog(`PARA full scan returned ${result.length} chars from dir: ${lifeDir}`);
+    await debugLog(`PARA full scan returned ${result.length} chars from dir: ${lifeDir}`);
     return result;
   } catch (err) {
-    debugLog(`PARA full scan failed for dir ${lifeDir}: ${err}`);
-    return "";
+    await debugLog(`PARA full scan failed for dir ${lifeDir}: ${err}`);
+    return '';
   }
 }
 
 /**
  * Find the owner entity by checking items.json for category: "owner".
  */
-async function findOwnerEntity(
-  allEntities: LifeEntity[]
-): Promise<string | null> {
+async function findOwnerEntity(allEntities: LifeEntity[]): Promise<string | null> {
   for (const entity of allEntities) {
-    const itemsPath = entity.summaryPath.replace("summary.md", "items.json");
+    const itemsPath = join(dirname(entity.summaryPath), 'items.json');
     try {
-      const raw = await readFile(itemsPath, "utf-8");
+      const raw = await readFile(itemsPath, 'utf-8');
       const data = JSON.parse(raw);
-      if (data.category === "owner") return entity.name;
+      if (data.category === 'owner') return entity.name;
     } catch {
       // skip
     }
@@ -170,11 +173,10 @@ async function findOwnerEntity(
 async function buildSearchedLifeContext(
   query: string,
   lifeDir: string,
-  limit: number
+  limit: number,
 ): Promise<string> {
-  const { entities: relevantNames, facts } =
-    await searchRelevantEntities(query);
-  debugLog(`PARA search returned ${relevantNames.length} entities, ${facts.length} facts`);
+  const { entities: relevantNames, facts } = await searchRelevantEntities(query, lifeDir);
+  await debugLog(`PARA search returned ${relevantNames.length} entities, ${facts.length} facts`);
 
   // Discover all entities so we can map names to summary paths
   const allEntities = await discoverEntities(lifeDir);
@@ -187,11 +189,13 @@ async function buildSearchedLifeContext(
   const ownerName = await findOwnerEntity(allEntities);
   if (ownerName && !relevantNames.includes(ownerName)) {
     relevantNames.unshift(ownerName);
-    debugLog(`PARA injected owner entity: ${ownerName}`);
+    await debugLog(`PARA injected owner entity: ${ownerName}`);
   }
 
-  if (relevantNames.length === 0) return "";
+  if (relevantNames.length === 0) return '';
 
+  const config = await loadConfig();
+  const maxEntityChars = config.life.maxEntityChars ?? 1500;
   const parts: string[] = [];
   let totalChars = 0;
 
@@ -201,10 +205,10 @@ async function buildSearchedLifeContext(
     if (!entity) continue;
 
     try {
-      const content = await readFile(entity.summaryPath, "utf-8");
+      const content = await readFile(entity.summaryPath, 'utf-8');
       const trimmed =
-        content.length > 1500
-          ? content.slice(0, 1500) + "\n...(truncated)"
+        content.length > maxEntityChars
+          ? content.slice(0, maxEntityChars) + '\n...(truncated)'
           : content;
 
       const section = `## [${entity.collection}] ${entity.name}\n${trimmed}`;
@@ -212,8 +216,8 @@ async function buildSearchedLifeContext(
 
       parts.push(section);
       totalChars += section.length;
-    } catch {
-      // skip unreadable
+    } catch (err) {
+      await debugLog(`buildSearchedLifeContext: failed to read ${entity.summaryPath}: ${err}`);
     }
   }
 
@@ -222,35 +226,34 @@ async function buildSearchedLifeContext(
   if (topFacts.length > 0) {
     const factsSection = `## Relevant Facts\n${topFacts
       .map((f) => `- [${f.entity}] ${f.fact}`)
-      .join("\n")}`;
+      .join('\n')}`;
 
     if (totalChars + factsSection.length <= limit) {
       parts.push(factsSection);
     }
   }
 
-  debugLog(`PARA searched context: ${parts.length} parts, ${totalChars} chars`);
-  if (parts.length === 0) return "";
+  await debugLog(`PARA searched context: ${parts.length} parts, ${totalChars} chars`);
+  if (parts.length === 0) return '';
 
-  return `You have the following life/PARA knowledge context relevant to this query:\n\n${parts.join("\n\n")}`;
+  return `You have the following life/PARA knowledge context relevant to this query:\n\n${parts.join('\n\n')}`;
 }
 
 /**
  * Full scan fallback: read all summaries up to char limit (original behavior).
  */
-async function buildFullLifeContext(
-  lifeDir: string,
-  limit: number
-): Promise<string> {
+async function buildFullLifeContext(lifeDir: string, limit: number): Promise<string> {
+  const config = await loadConfig();
+  const maxEntityChars = config.life.maxEntityChars ?? 1500;
   const entities = await discoverEntities(lifeDir);
-  if (entities.length === 0) return "";
+  if (entities.length === 0) return '';
 
   const parts: string[] = [];
   let totalChars = 0;
 
   // Read index.md first as overview
   try {
-    const index = await readFile(join(lifeDir, "index.md"), "utf-8");
+    const index = await readFile(join(lifeDir, 'index.md'), 'utf-8');
     const section = `## Life Overview\n${index}`;
     if (section.length <= limit) {
       parts.push(section);
@@ -262,10 +265,10 @@ async function buildFullLifeContext(
 
   for (const entity of entities) {
     try {
-      const content = await readFile(entity.summaryPath, "utf-8");
+      const content = await readFile(entity.summaryPath, 'utf-8');
       const trimmed =
-        content.length > 1500
-          ? content.slice(0, 1500) + "\n...(truncated)"
+        content.length > maxEntityChars
+          ? content.slice(0, maxEntityChars) + '\n...(truncated)'
           : content;
 
       const section = `## [${entity.collection}] ${entity.name}\n${trimmed}`;
@@ -273,18 +276,12 @@ async function buildFullLifeContext(
 
       parts.push(section);
       totalChars += section.length;
-    } catch {
-      // skip unreadable
+    } catch (err) {
+      await debugLog(`buildFullLifeContext: failed to read ${entity.summaryPath}: ${err}`);
     }
   }
 
-  if (parts.length === 0) return "";
+  if (parts.length === 0) return '';
 
-  return `You have the following life/PARA knowledge context about the user:\n\n${parts.join("\n\n")}`;
-}
-
-export async function listLifeEntities(): Promise<LifeEntity[]> {
-  const config = await loadConfig();
-  const lifeDir = config.life.dir || getLifeDir();
-  return discoverEntities(lifeDir);
+  return `You have the following life/PARA knowledge context about the user:\n\n${parts.join('\n\n')}`;
 }

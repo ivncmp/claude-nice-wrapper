@@ -1,16 +1,17 @@
-import { readFile, writeFile, readdir, unlink } from "node:fs/promises";
-import { join } from "node:path";
-import { getDataDir, ensureDataDir } from "./config.js";
+import { readFile, writeFile, readdir, unlink } from 'node:fs/promises';
+import { join } from 'node:path';
+
+import { getDataDir, ensureDataDir } from './config.js';
 
 function getMemoryDir(): string {
-  return join(getDataDir(), "memory");
+  return join(getDataDir(), 'memory');
 }
 
 function slugify(key: string): string {
   return key
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
 }
 
 function keyToFile(key: string): string {
@@ -19,12 +20,12 @@ function keyToFile(key: string): string {
 
 export async function setMemory(key: string, value: string): Promise<void> {
   await ensureDataDir();
-  await writeFile(keyToFile(key), value, "utf-8");
+  await writeFile(keyToFile(key), value, 'utf-8');
 }
 
 export async function getMemory(key: string): Promise<string | null> {
   try {
-    return await readFile(keyToFile(key), "utf-8");
+    return await readFile(keyToFile(key), 'utf-8');
   } catch {
     return null;
   }
@@ -33,9 +34,7 @@ export async function getMemory(key: string): Promise<string | null> {
 export async function listMemoryKeys(): Promise<string[]> {
   try {
     const files = await readdir(getMemoryDir());
-    return files
-      .filter((f) => f.endsWith(".md"))
-      .map((f) => f.replace(/\.md$/, ""));
+    return files.filter((f) => f.endsWith('.md')).map((f) => f.replace(/\.md$/, ''));
   } catch {
     return [];
   }
@@ -48,10 +47,7 @@ export async function searchMemory(query: string): Promise<{ key: string; conten
 
   for (const key of keys) {
     const content = await getMemory(key);
-    if (
-      content &&
-      (key.toLowerCase().includes(lower) || content.toLowerCase().includes(lower))
-    ) {
+    if (content && (key.toLowerCase().includes(lower) || content.toLowerCase().includes(lower))) {
       results.push({ key, content });
     }
   }
@@ -67,12 +63,9 @@ export async function deleteMemory(key: string): Promise<boolean> {
   }
 }
 
-export async function buildMemoryContext(
-  keys?: string[],
-  maxChars = 4000
-): Promise<string> {
+export async function buildMemoryContext(keys?: string[], maxChars = 4000): Promise<string> {
   const allKeys = keys?.length ? keys : await listMemoryKeys();
-  if (allKeys.length === 0) return "";
+  if (allKeys.length === 0) return '';
 
   const parts: string[] = [];
   let totalChars = 0;
@@ -88,7 +81,7 @@ export async function buildMemoryContext(
     totalChars += section.length;
   }
 
-  if (parts.length === 0) return "";
+  if (parts.length === 0) return '';
 
-  return `You have the following memory/context notes:\n\n${parts.join("\n\n")}`;
+  return `You have the following memory/context notes:\n\n${parts.join('\n\n')}`;
 }

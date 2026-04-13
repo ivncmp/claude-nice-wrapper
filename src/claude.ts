@@ -1,24 +1,28 @@
-import { spawn } from "node:child_process";
-import type { ClaudeOptions, ClaudeResult, ClaudeUsage } from "./lib/types.js";
+import { spawn } from 'node:child_process';
+
+import { loadConfig } from './lib/config.js';
+import type { ClaudeOptions, ClaudeResult, ClaudeUsage } from './lib/types.js';
 
 export async function execClaude(options: ClaudeOptions): Promise<ClaudeResult> {
-  const args = buildArgs(options);
+  const config = await loadConfig();
+  const args = buildArgs(options, config.claude?.skipPermissions ?? false);
+  const bin = config.claude?.bin || 'claude';
   const startTime = Date.now();
 
   return new Promise((resolve, reject) => {
-    const proc = spawn("claude", args, {
-      stdio: ["pipe", "pipe", "pipe"],
+    const proc = spawn(bin, args, {
+      stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env },
     });
 
-    let stdout = "";
-    let stderr = "";
+    let stdout = '';
+    let stderr = '';
 
-    proc.stdout.on("data", (data: Buffer) => {
+    proc.stdout.on('data', (data: Buffer) => {
       stdout += data.toString();
     });
 
-    proc.stderr.on("data", (data: Buffer) => {
+    proc.stderr.on('data', (data: Buffer) => {
       stderr += data.toString();
     });
 
@@ -29,15 +33,17 @@ export async function execClaude(options: ClaudeOptions): Promise<ClaudeResult> 
       proc.stdin.end();
     }
 
-    proc.on("error", (err) => {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-        reject(new Error("claude CLI not found. Make sure Claude Code is installed and on your PATH."));
+    proc.on('error', (err) => {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        reject(
+          new Error('claude CLI not found. Make sure Claude Code is installed and on your PATH.'),
+        );
       } else {
         reject(err);
       }
     });
 
-    proc.on("close", (code) => {
+    proc.on('close', (code) => {
       const durationMs = Date.now() - startTime;
 
       if (code !== 0 && !stdout.trim()) {
@@ -53,11 +59,15 @@ export async function execClaude(options: ClaudeOptions): Promise<ClaudeResult> 
           output: u.output_tokens ?? 0,
           cacheWrite: u.cache_creation_input_tokens ?? 0,
           cacheRead: u.cache_read_input_tokens ?? 0,
-          total: (u.input_tokens ?? 0) + (u.output_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0),
+          total:
+            (u.input_tokens ?? 0) +
+            (u.output_tokens ?? 0) +
+            (u.cache_creation_input_tokens ?? 0) +
+            (u.cache_read_input_tokens ?? 0),
         };
         resolve({
           result: parsed.result ?? parsed.content ?? stdout,
-          sessionId: parsed.session_id ?? "",
+          sessionId: parsed.session_id ?? '',
           costUsd: parsed.cost_usd ?? parsed.total_cost_usd ?? 0,
           durationMs,
           isError: parsed.is_error ?? false,
@@ -68,7 +78,7 @@ export async function execClaude(options: ClaudeOptions): Promise<ClaudeResult> 
         // If JSON parsing fails, return raw text
         resolve({
           result: stdout.trim(),
-          sessionId: "",
+          sessionId: '',
           costUsd: 0,
           durationMs,
           isError: code !== 0,
@@ -78,40 +88,44 @@ export async function execClaude(options: ClaudeOptions): Promise<ClaudeResult> 
   });
 }
 
-function buildArgs(options: ClaudeOptions): string[] {
-  const args = ["--print", "--output-format", "json", "--dangerously-skip-permissions"];
+function buildArgs(options: ClaudeOptions, skipPermissions: boolean): string[] {
+  const args = ['--print', '--output-format', 'json'];
+
+  if (skipPermissions) {
+    args.push('--dangerously-skip-permissions');
+  }
 
   if (options.model) {
-    args.push("--model", options.model);
+    args.push('--model', options.model);
   }
 
   if (options.maxTurns !== undefined) {
-    args.push("--max-turns", String(options.maxTurns));
+    args.push('--max-turns', String(options.maxTurns));
   }
 
   if (options.maxBudgetUsd !== undefined) {
-    args.push("--max-budget-usd", String(options.maxBudgetUsd));
+    args.push('--max-budget-usd', String(options.maxBudgetUsd));
   }
 
   if (options.systemPrompt) {
-    args.push("--system-prompt", options.systemPrompt);
+    args.push('--system-prompt', options.systemPrompt);
   }
 
   if (options.appendSystemPrompt) {
-    args.push("--append-system-prompt", options.appendSystemPrompt);
+    args.push('--append-system-prompt', options.appendSystemPrompt);
   }
 
   if (options.resumeSessionId) {
-    args.push("--resume", options.resumeSessionId);
+    args.push('--resume', options.resumeSessionId);
   }
 
   if (options.continueSession) {
-    args.push("--continue");
+    args.push('--continue');
   }
 
   if (options.allowedTools) {
     for (const tool of options.allowedTools) {
-      args.push("--allowedTools", tool);
+      args.push('--allowedTools', tool);
     }
   }
 
@@ -127,16 +141,18 @@ function buildArgs(options: ClaudeOptions): string[] {
 
 export async function readStdin(): Promise<string> {
   if (process.stdin.isTTY) {
-    return "";
+    return '';
   }
 
   return new Promise((resolve) => {
-    let data = "";
-    process.stdin.setEncoding("utf-8");
-    process.stdin.on("data", (chunk: string) => {
+    let data = '';
+    const timeout = setTimeout(() => resolve(data), 5000);
+    process.stdin.setEncoding('utf-8');
+    process.stdin.on('data', (chunk: string) => {
       data += chunk;
     });
-    process.stdin.on("end", () => {
+    process.stdin.on('end', () => {
+      clearTimeout(timeout);
       resolve(data);
     });
   });

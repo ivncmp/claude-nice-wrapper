@@ -1,59 +1,45 @@
-import { appendFile, mkdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { homedir } from "node:os";
+import { appendFile, mkdir, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
-const CHATS_DIR = join(homedir(), "life", "chats");
+import { loadConfig } from './config.js';
 
-function getTodayFile(): string {
+function getTodayFile(dir: string): string {
   const today = new Date().toISOString().slice(0, 10);
-  return join(CHATS_DIR, `${today}.md`);
-}
-
-/**
- * Strips openclaw metadata blocks (Conversation info / Sender untrusted metadata)
- * from the beginning of the prompt, returning only the actual user message.
- *
- * Openclaw prepends blocks like:
- *   Conversation info (untrusted metadata):
- *   ```json
- *   { ... }
- *   ```
- *   Sender (untrusted metadata):
- *   ```json
- *   { ... }
- *   ```
- *   <actual message>
- */
-function extractUserMessage(prompt: string): string {
-  const lastBacktick = prompt.lastIndexOf("```");
-  if (lastBacktick !== -1) {
-    const after = prompt.slice(lastBacktick + 3).trim();
-    if (after) return after;
-  }
-  return prompt.trim();
+  return join(dir, `${today}.md`);
 }
 
 export async function buildDayChatContext(): Promise<string> {
+  const config = await loadConfig();
+  const cl = config.chatLog;
+
+  if (!cl?.enabled || !cl?.dir) return '';
+
   try {
-    const content = await readFile(getTodayFile(), "utf-8");
+    const content = await readFile(getTodayFile(cl.dir), 'utf-8');
     const trimmed = content.trim();
-    if (!trimmed) return "";
-    return `## Conversación de hoy\n\n${trimmed}`;
+    if (!trimmed) return '';
+    const header = cl.sectionHeader ?? "## Today's conversation";
+    return `${header}\n\n${trimmed}`;
   } catch {
-    return "";
+    return '';
   }
 }
 
-export async function addChatLog(
-  userPrompt: string,
-  assistantResponse: string
-): Promise<void> {
-  const userMsg = extractUserMessage(userPrompt);
+export async function addChatLog(userPrompt: string, assistantResponse: string): Promise<void> {
+  const config = await loadConfig();
+  const cl = config.chatLog;
+
+  if (!cl?.enabled || !cl?.dir) return;
+
+  const userMsg = userPrompt.trim();
   const assistantMsg = assistantResponse.trim();
 
   if (!userMsg || !assistantMsg) return;
 
-  await mkdir(CHATS_DIR, { recursive: true });
-  const entry = `Yo: ${userMsg}\nAssistant: ${assistantMsg}\n\n`;
-  await appendFile(getTodayFile(), entry, "utf-8");
+  const userPrefix = cl.userPrefix ?? 'User:';
+  const assistantPrefix = cl.assistantPrefix ?? 'Assistant:';
+
+  await mkdir(cl.dir, { recursive: true });
+  const entry = `${userPrefix} ${userMsg}\n${assistantPrefix} ${assistantMsg}\n\n`;
+  await appendFile(getTodayFile(cl.dir), entry, 'utf-8');
 }

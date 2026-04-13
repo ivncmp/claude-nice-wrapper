@@ -174,7 +174,7 @@ Every time you run `cw`, multiple context sources are assembled and injected int
 
 A human-readable log of today's conversations. Every exchange is appended automatically. On each new prompt, today's full chat log is prepended to the context so Claude has continuity across your session.
 
-**Storage:** configurable via `chatLog.dir` (currently hardcoded to `~/life/chats/YYYY-MM-DD.md` — see Refactoring).
+**Storage:** configurable via `chatLog.dir` in config. Disabled by default — enable with `cw config set chatLog.enabled true` and `cw config set chatLog.dir /path/to/chats`.
 
 ### 2. Workspace bootstrap files (optional)
 
@@ -187,7 +187,7 @@ Bootstrap files that define the assistant's personality and the user's profile. 
 | `USER.md` | User profile information |
 | `MEMORY.md` | System-level memory |
 
-**Storage:** currently hardcoded to `~/.openclaw/workspace/` — see Refactoring for making this configurable.
+**Storage:** configurable via `workspace.dir` in config. Disabled by default — enable with `cw config set workspace.enabled true` and `cw config set workspace.dir /path/to/workspace`.
 
 Injected in order, up to **16,000 chars** total.
 
@@ -229,10 +229,6 @@ All parts are joined with `---` separators and passed as a single `--append-syst
 cw -r my-session --max-session-tokens 100000 "next question"
 ```
 
-### Recent history on reset
-
-When a session resets (via `--history-dir <path>`), recent user messages from Claude's JSONL session files are extracted and injected for continuity. Only messages from the last hour are included (up to 3,000 chars).
-
 ---
 
 ## All Flags
@@ -253,7 +249,6 @@ When a session resets (via `--history-dir <path>`), recent user messages from Cl
 | `--max-turns <n>` | ask, chat | Maximum agent turns per invocation |
 | `--max-budget-usd <n>` | ask | Maximum spend in USD for this call |
 | `--max-session-tokens <n>` | ask | Reset session if total tokens exceed this |
-| `--history-dir <path>` | ask | Sessions directory for recent history injection on reset |
 
 ---
 
@@ -270,12 +265,12 @@ When a session resets (via `--history-dir <path>`), recent user messages from Cl
   templates/               # prompt templates (*.yaml)
 ```
 
-Optional integrations (paths currently hardcoded, to be made configurable):
+Optional integrations (disabled by default, configure via `cw config`):
 
 ```
-~/.openclaw/workspace/     # workspace bootstrap files (IDENTITY, SOUL, USER, MEMORY)
-~/life/chats/              # daily conversation logs (YYYY-MM-DD.md)
-<life.dir>/                # PARA knowledge base (set via config)
+<workspace.dir>/           # workspace bootstrap files (IDENTITY, SOUL, USER, MEMORY)
+<chatLog.dir>/             # daily conversation logs (YYYY-MM-DD.md)
+<life.dir>/                # PARA knowledge base
 ```
 
 ---

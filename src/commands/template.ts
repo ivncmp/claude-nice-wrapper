@@ -1,24 +1,27 @@
-import { Command } from "commander";
-import chalk from "chalk";
-import { readFile } from "node:fs/promises";
-import { parse } from "yaml";
+import { readFile } from 'node:fs/promises';
+
+import chalk from 'chalk';
+import { Command } from 'commander';
+import { parse } from 'yaml';
+
+import { readStdin } from '../claude.js';
 import {
   getTemplate,
   saveTemplate,
   listTemplates,
   deleteTemplate,
   renderTemplate,
-} from "../lib/template-store.js";
-import { runAsk } from "./ask.js";
-import { readStdin } from "../claude.js";
-import type { TemplateDefinition } from "../lib/types.js";
+} from '../lib/template-store.js';
+import type { TemplateDefinition } from '../lib/types.js';
+
+import { runAsk } from './ask.js';
 
 export function createTemplateCommand(): Command {
-  const cmd = new Command("template").description("Manage prompt templates");
+  const cmd = new Command('template').description('Manage prompt templates');
 
   cmd
-    .command("list")
-    .description("List all templates")
+    .command('list')
+    .description('List all templates')
     .action(async () => {
       const templates = await listTemplates();
       if (templates.length === 0) {
@@ -26,14 +29,14 @@ export function createTemplateCommand(): Command {
         return;
       }
       for (const t of templates) {
-        const desc = t.description ? chalk.dim(` — ${t.description}`) : "";
+        const desc = t.description ? chalk.dim(` — ${t.description}`) : '';
         console.log(`${chalk.blue(t.name)}${desc}`);
       }
     });
 
   cmd
-    .command("show <name>")
-    .description("Show template details")
+    .command('show <name>')
+    .description('Show template details')
     .action(async (name: string) => {
       const t = await getTemplate(name);
       if (!t) {
@@ -43,31 +46,31 @@ export function createTemplateCommand(): Command {
       console.log(chalk.bold(t.name));
       if (t.description) console.log(chalk.dim(t.description));
       console.log();
-      console.log(chalk.bold("Prompt:"));
+      console.log(chalk.bold('Prompt:'));
       console.log(t.prompt);
       if (t.variables?.length) {
         console.log();
-        console.log(chalk.bold("Variables:"));
+        console.log(chalk.bold('Variables:'));
         for (const v of t.variables) {
-          const req = v.required ? chalk.red("*") : "";
-          const def = v.default ? chalk.dim(` (default: ${v.default})`) : "";
-          const src = v.source ? chalk.dim(` [${v.source}]`) : "";
+          const req = v.required ? chalk.red('*') : '';
+          const def = v.default ? chalk.dim(` (default: ${v.default})`) : '';
+          const src = v.source ? chalk.dim(` [${v.source}]`) : '';
           console.log(`  {{${v.name}}}${req}${def}${src}`);
         }
       }
     });
 
   cmd
-    .command("add <name>")
-    .description("Add a template from a YAML file or interactively")
-    .option("-f, --file <path>", "Import from YAML file")
-    .option("-d, --description <text>", "Template description")
-    .option("-p, --prompt <text>", "Template prompt text")
+    .command('add <name>')
+    .description('Add a template from a YAML file or interactively')
+    .option('-f, --file <path>', 'Import from YAML file')
+    .option('-d, --description <text>', 'Template description')
+    .option('-p, --prompt <text>', 'Template prompt text')
     .action(async (name: string, opts) => {
       let template: TemplateDefinition;
 
       if (opts.file) {
-        const raw = await readFile(opts.file, "utf-8");
+        const raw = await readFile(opts.file, 'utf-8');
         template = parse(raw) as TemplateDefinition;
         template.name = name;
       } else if (opts.prompt) {
@@ -77,7 +80,7 @@ export function createTemplateCommand(): Command {
           prompt: opts.prompt,
         };
       } else {
-        console.error(chalk.red("Provide --file or --prompt"));
+        console.error(chalk.red('Provide --file or --prompt'));
         process.exit(1);
       }
 
@@ -86,11 +89,11 @@ export function createTemplateCommand(): Command {
     });
 
   cmd
-    .command("run <name>")
-    .description("Run a template")
-    .option("--var <pairs...>", "Variables as key=value pairs")
-    .option("-m, --model <model>", "Model override")
-    .option("--raw", "Print raw JSON response")
+    .command('run <name>')
+    .description('Run a template')
+    .option('--var <pairs...>', 'Variables as key=value pairs')
+    .option('-m, --model <model>', 'Model override')
+    .option('--raw', 'Print raw JSON response')
     .action(async (name: string, opts) => {
       const t = await getTemplate(name);
       if (!t) {
@@ -102,14 +105,14 @@ export function createTemplateCommand(): Command {
       const vars: Record<string, string> = {};
       if (opts.var) {
         for (const pair of opts.var as string[]) {
-          const eq = pair.indexOf("=");
+          const eq = pair.indexOf('=');
           if (eq === -1) continue;
           vars[pair.slice(0, eq)] = pair.slice(eq + 1);
         }
       }
 
       // Check for stdin variable
-      const stdinVar = t.variables?.find((v) => v.source === "stdin");
+      const stdinVar = t.variables?.find((v) => v.source === 'stdin');
       if (stdinVar) {
         const stdinContent = await readStdin();
         if (stdinContent) {
@@ -144,8 +147,8 @@ export function createTemplateCommand(): Command {
     });
 
   cmd
-    .command("delete <name>")
-    .description("Delete a template")
+    .command('delete <name>')
+    .description('Delete a template')
     .action(async (name: string) => {
       const deleted = await deleteTemplate(name);
       if (deleted) {

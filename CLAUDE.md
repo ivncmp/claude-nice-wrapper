@@ -35,10 +35,10 @@ No test framework is configured yet. No linter is configured.
 - `memory-store.ts` — one `.md` file per key in `~/.claude-wrapper/memory/` (keys are slugified for filenames); `buildMemoryContext()` assembles them for system prompt injection
 - `template-store.ts` — one `.yaml` file per template in `~/.claude-wrapper/templates/`; `renderTemplate()` does `{{var}}` substitution
 - `life-store.ts` — optional PARA knowledge base integration; two modes: semantic search (via bundled `scripts/search_facts.py`) when a query is provided, or full scan of `<life.dir>/{projects,areas,resources}/**/summary.md` as fallback; `life.dir` is configurable via config but defaults empty (disabled); Python script path is computed relative to `__dirname` post-build
-- `workspace-store.ts` — reads bootstrap files (`IDENTITY.md`, `SOUL.md`, `USER.md`, `MEMORY.md`) from a hardcoded path (`~/.openclaw/workspace/`) to inject personality/identity context; truncated to 16,000 chars hardcoded; NOT configurable
-- `chat-log-store.ts` — human-readable daily conversation log at a hardcoded path (`~/life/chats/YYYY-MM-DD.md`); strips external metadata blocks from user messages before logging; uses hardcoded Spanish strings ("Yo:", "## Conversación de hoy"); NOT configurable
+- `workspace-store.ts` — reads bootstrap files (`IDENTITY.md`, `SOUL.md`, `USER.md`, `MEMORY.md`) from `config.workspace.dir` to inject personality/identity context; configurable file list via `config.workspace.files`; disabled by default (`workspace.enabled: false`)
+- `chat-log-store.ts` — human-readable daily conversation log at `config.chatLog.dir` (`YYYY-MM-DD.md`); prefixes configurable via `config.chatLog.userPrefix` / `config.chatLog.assistantPrefix`; disabled by default (`chatLog.enabled: false`)
 - `session-state.ts` — tracks per-session token counts in `~/.claude-wrapper/session-state.json`; used by `ask.ts` to auto-reset sessions that exceed `--max-session-tokens`
-- `recent-history.ts` — parses Claude JSONL session files to extract recent user messages within a time window; contains hardcoded Telegram/external metadata stripping logic; used to inject conversational continuity on session reset
+- `context-builder.ts` — shared `buildSystemPromptContext()` function used by both `ask.ts` and `chat.ts` to assemble all context sources
 - `types.ts` — shared TypeScript interfaces (`ClaudeOptions`, `ClaudeResult`, `HistoryEntry`, `TemplateDefinition`, `AppConfig`)
 
 ## Context Injection Pipeline
@@ -46,7 +46,7 @@ No test framework is configured yet. No linter is configured.
 Context is assembled in `ask.ts` from multiple sources **in this priority order** (highest first):
 
 1. **Day chat log** (`chat-log-store.ts`) — today's conversation history; injected via `unshift` to be highest priority
-2. **Workspace bootstrap** (`workspace-store.ts`) — identity/personality files from `~/.openclaw/workspace/`
+2. **Workspace bootstrap** (`workspace-store.ts`) — identity/personality files from `config.workspace.dir`
 3. **Memory snippets** (`memory-store.ts`) — named markdown snippets; truncated to `config.memory.maxInjectionChars` (default 4,000)
 4. **Life/PARA context** (`life-store.ts`) — knowledge base summaries; truncated to `config.life.maxInjectionChars` (default 12,000)
 
@@ -62,9 +62,7 @@ All parts joined with `"\n\n---\n\n"` and passed via `--append-system-prompt`.
 
 See `REFACTORING.md` for the full list. Key items:
 
-1. **Hardcoded personal paths:** `~/.openclaw/workspace/` (workspace), `~/life/chats/` (chat log)
-2. **Hardcoded Spanish strings:** "Yo:", "Assistant:", "## Conversación de hoy" in `chat-log-store.ts`
-3. **Hardcoded external integrations:** Telegram/Openclaw metadata stripping in `recent-history.ts` and `chat-log-store.ts`
+1. **Workspace and chat log** are disabled by default — users must configure `workspace.dir` and `chatLog.dir` to enable them
 4. **Context injection inconsistency:** `ask.ts` vs `chat.ts` inject different sources
 5. **Duplicated context assembly logic:** not extracted into a shared function
 6. **Python script path:** fragile relative path computation post-build
@@ -79,4 +77,4 @@ The package uses `"type": "module"` and NodeNext module resolution — all local
 
 ## Key CLI Flags
 
-Shared across `ask` and `chat`: `--no-memory`, `--memory <keys>` (comma-separated), `--no-life`, `--no-history`, `--raw`, `--token-footer`, `--max-session-tokens <n>`, `--history-dir <path>`, `-c/--continue`, `-r/--resume <id>`, `-m/--model`, `--max-turns`, `--max-budget-usd`.
+Shared across `ask` and `chat`: `--no-memory`, `--memory <keys>` (comma-separated), `--no-life`, `--no-history`, `--raw`, `--token-footer`, `--max-session-tokens <n>`, `-c/--continue`, `-r/--resume <id>`, `-m/--model`, `--max-turns`, `--max-budget-usd`.

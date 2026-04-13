@@ -1,33 +1,36 @@
-import { Command } from "commander";
-import chalk from "chalk";
-import { execClaude, readStdin } from "../claude.js";
-import { addHistoryEntry } from "../lib/history-store.js";
-import { addChatLog, buildDayChatContext } from "../lib/chat-log-store.js";
-import { buildWorkspaceContext } from "../lib/workspace-store.js";
-import { buildMemoryContext } from "../lib/memory-store.js";
-import { buildLifeContext } from "../lib/life-store.js";
-import { loadConfig } from "../lib/config.js";
-import { getSessionTokens, updateSessionTokens } from "../lib/session-state.js";
-import type { ClaudeOptions } from "../lib/types.js";
+import chalk from 'chalk';
+import { Command } from 'commander';
+
+import { execClaude, readStdin } from '../claude.js';
+import { addChatLog } from '../lib/chat-log-store.js';
+import { loadConfig } from '../lib/config.js';
+import { buildSystemPromptContext } from '../lib/context-builder.js';
+import { addHistoryEntry } from '../lib/history-store.js';
+import { getSessionTokens, updateSessionTokens } from '../lib/session-state.js';
+import type { ClaudeOptions } from '../lib/types.js';
 
 export function createAskCommand(): Command {
-  return new Command("ask")
-    .description("Send a prompt to Claude")
-    .argument("[prompt...]", "The prompt to send")
-    .option("-m, --model <model>", "Model to use")
-    .option("--max-turns <n>", "Max agent turns", parseInt)
-    .option("--max-budget-usd <n>", "Max budget in USD", parseFloat)
-    .option("-o, --output-format <format>", "Output format: text, json, stream-json")
-    .option("--system-prompt <text>", "System prompt override")
-    .option("--no-memory", "Skip memory injection")
-    .option("--memory <keys>", "Inject only specific memory keys (comma-separated)")
-    .option("--no-life", "Skip life/PARA context injection")
-    .option("--no-history", "Don't save to history")
-    .option("--raw", "Print raw JSON response")
-    .option("--token-footer", "Append token usage footer to response text")
-    .option("--max-session-tokens <n>", "Reset session if context exceeds this token count", parseInt)
-    .option("-c, --continue", "Continue last conversation")
-    .option("-r, --resume <id>", "Resume a specific session")
+  return new Command('ask')
+    .description('Send a prompt to Claude')
+    .argument('[prompt...]', 'The prompt to send')
+    .option('-m, --model <model>', 'Model to use')
+    .option('--max-turns <n>', 'Max agent turns', parseInt)
+    .option('--max-budget-usd <n>', 'Max budget in USD', parseFloat)
+    .option('-o, --output-format <format>', 'Output format: text, json, stream-json')
+    .option('--system-prompt <text>', 'System prompt override')
+    .option('--no-memory', 'Skip memory injection')
+    .option('--memory <keys>', 'Inject only specific memory keys (comma-separated)')
+    .option('--no-life', 'Skip life/PARA context injection')
+    .option('--no-history', "Don't save to history")
+    .option('--raw', 'Print raw JSON response')
+    .option('--token-footer', 'Append token usage footer to response text')
+    .option(
+      '--max-session-tokens <n>',
+      'Reset session if context exceeds this token count',
+      parseInt,
+    )
+    .option('-c, --continue', 'Continue last conversation')
+    .option('-r, --resume <id>', 'Resume a specific session')
     .action(async (promptParts: string[], opts) => {
       try {
         await runAsk(promptParts, opts);
@@ -38,58 +41,41 @@ export function createAskCommand(): Command {
     });
 }
 
-export async function runAsk(
-  promptParts: string[],
-  opts: Record<string, unknown>
-): Promise<void> {
+export async function runAsk(promptParts: string[], opts: Record<string, unknown>): Promise<void> {
   const config = await loadConfig();
   const stdinContent = await readStdin();
-  const promptText = promptParts.join(" ");
+  const promptText = promptParts.join(' ');
 
   if (!promptText && !stdinContent) {
-    console.error(chalk.red("No prompt provided. Usage: cw ask \"your question\""));
+    console.error(chalk.red('No prompt provided. Usage: cw ask "your question"'));
     process.exit(1);
   }
 
   // Build the full prompt
   let fullPrompt = promptText;
   if (stdinContent) {
-    fullPrompt = fullPrompt
-      ? `${fullPrompt}\n\n---\n\n${stdinContent}`
-      : stdinContent;
+    fullPrompt = fullPrompt ? `${fullPrompt}\n\n---\n\n${stdinContent}` : stdinContent;
   }
 
-  // Build context: workspace bootstrap files first (highest priority)
-  const contextParts: string[] = [];
+  // Build context via shared builder
+  const memoryOpt =
+    opts.memory === false
+      ? false
+      : typeof opts.memory === 'string'
+        ? (opts.memory as string).split(',')
+        : true;
 
-  const workspaceCtx = await buildWorkspaceContext();
-  if (workspaceCtx) {
-    contextParts.push(workspaceCtx);
-  }
-
-  if (opts.memory !== false) {
-    const memoryKeys =
-      typeof opts.memory === "string"
-        ? (opts.memory as string).split(",")
-        : config.memory.defaultKeys.length
-          ? config.memory.defaultKeys
-          : undefined;
-
-    const memoryCtx = await buildMemoryContext(
-      memoryKeys,
-      config.memory.maxInjectionChars
-    );
-    if (memoryCtx) {
-      contextParts.push(memoryCtx);
-    }
-  }
-
-  if (opts.life !== false && config.life.autoInject) {
-    const lifeCtx = await buildLifeContext(fullPrompt, config.life.maxInjectionChars);
-    if (lifeCtx) {
-      contextParts.push(lifeCtx);
-    }
-  }
+  const appendSystemPrompt =
+    (await buildSystemPromptContext(
+      {
+        memory: memoryOpt,
+        life: opts.life !== false,
+        workspace: true,
+        chatLog: true,
+        lifeQuery: fullPrompt,
+      },
+      config,
+    )) || undefined;
 
   // Check session token limit before resuming
   let resumeSessionId = opts.resume as string | undefined;
@@ -97,19 +83,9 @@ export async function runAsk(
   if (resumeSessionId && maxSessionTokens) {
     const currentTokens = await getSessionTokens(resumeSessionId);
     if (currentTokens > maxSessionTokens) {
-      resumeSessionId = undefined; // drop resume, start fresh
+      resumeSessionId = undefined;
     }
   }
-
-  // Always inject today's full conversation as context
-  const dayChatCtx = await buildDayChatContext();
-  if (dayChatCtx) {
-    contextParts.unshift(dayChatCtx);
-  }
-
-  const appendSystemPrompt = contextParts.length > 0
-    ? contextParts.join("\n\n---\n\n")
-    : undefined;
 
   const claudeOpts: ClaudeOptions = {
     prompt: fullPrompt,
@@ -139,9 +115,9 @@ export async function runAsk(
     parts.push(`in:${u.input.toLocaleString()}`);
     parts.push(`out:${u.output.toLocaleString()}`);
     parts.push(`~${u.total.toLocaleString()}`);
-    const footer = `\n\n—————————————\n\`${parts.join(" · ")}\``;
+    const footer = `\n\n—————————————\n\`${parts.join(' · ')}\``;
     result.result += footer;
-    if (result.raw && typeof result.raw === "object") {
+    if (result.raw && typeof result.raw === 'object') {
       (result.raw as Record<string, unknown>).result = result.result;
     }
   }
@@ -149,8 +125,14 @@ export async function runAsk(
   // Output
   if (opts.raw) {
     console.log(JSON.stringify(result.raw ?? result, null, 2));
-  } else if (opts.outputFormat === "json") {
-    console.log(JSON.stringify({ result: result.result, sessionId: result.sessionId, costUsd: result.costUsd }, null, 2));
+  } else if (opts.outputFormat === 'json') {
+    console.log(
+      JSON.stringify(
+        { result: result.result, sessionId: result.sessionId, costUsd: result.costUsd },
+        null,
+        2,
+      ),
+    );
   } else {
     console.log(result.result);
   }
@@ -167,6 +149,6 @@ export async function runAsk(
     });
   }
 
-  // Save human-readable chat log to ~/life/chats/
+  // Save to daily chat log (if configured)
   void addChatLog(promptText, resultText);
 }

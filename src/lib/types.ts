@@ -1,7 +1,6 @@
 export interface ClaudeOptions {
   prompt: string;
   stdinContent?: string;
-  outputFormat?: "text" | "json" | "stream-json";
   maxTurns?: number;
   maxBudgetUsd?: number;
   model?: string;
@@ -54,12 +53,12 @@ export interface TemplateDefinition {
   description?: string;
   prompt: string;
   variables?: TemplateVariable[];
-  claudeOptions?: Partial<Pick<ClaudeOptions, "model" | "maxTurns" | "maxBudgetUsd">>;
+  claudeOptions?: Partial<Pick<ClaudeOptions, 'model' | 'maxTurns' | 'maxBudgetUsd'>>;
 }
 
 export interface TemplateVariable {
   name: string;
-  source?: "stdin" | "arg" | "flag";
+  source?: 'stdin' | 'arg' | 'flag';
   required?: boolean;
   default?: string;
 }
@@ -74,13 +73,33 @@ export interface AppConfig {
     autoInject: boolean;
     dir: string;
     maxInjectionChars: number;
+    maxEntityChars: number;
+    pythonBin: string;
   };
   history: {
     maxEntries: number;
   };
+  workspace: {
+    enabled: boolean;
+    dir: string;
+    maxInjectionChars: number;
+    files: Array<{ file: string; header: string }>;
+  };
+  chatLog: {
+    enabled: boolean;
+    dir: string;
+    userPrefix: string;
+    assistantPrefix: string;
+    sectionHeader: string;
+  };
+  claude: {
+    bin: string;
+    skipPermissions: boolean;
+  };
   defaults: {
     model?: string;
     maxTurns?: number;
-    outputFormat?: "text" | "json" | "stream-json";
+    outputFormat?: 'text' | 'json' | 'stream-json';
   };
+  debug: boolean;
 }

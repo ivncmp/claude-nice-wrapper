@@ -1,28 +1,39 @@
-import { Command } from "commander";
-import chalk from "chalk";
+import chalk from 'chalk';
+import { Command } from 'commander';
+
 import {
   setMemory,
   getMemory,
   listMemoryKeys,
   searchMemory,
   deleteMemory,
-} from "../lib/memory-store.js";
+} from '../lib/memory-store.js';
+
+function printKeyList(keys: string[]): void {
+  if (keys.length === 0) {
+    console.log(chalk.dim('No memory entries.'));
+    return;
+  }
+  for (const key of keys) {
+    console.log(chalk.blue(key));
+  }
+}
 
 export function createMemoryCommand(): Command {
-  const cmd = new Command("memory").description("Manage persistent memory");
+  const cmd = new Command('memory').description('Manage persistent memory');
 
   cmd
-    .command("set <key> <value...>")
-    .description("Set a memory entry")
+    .command('set <key> <value...>')
+    .description('Set a memory entry')
     .action(async (key: string, valueParts: string[]) => {
-      const value = valueParts.join(" ");
+      const value = valueParts.join(' ');
       await setMemory(key, value);
       console.log(chalk.green(`Memory "${key}" saved.`));
     });
 
   cmd
-    .command("get <key>")
-    .description("Get a memory entry")
+    .command('get <key>')
+    .description('Get a memory entry')
     .action(async (key: string) => {
       const value = await getMemory(key);
       if (value === null) {
@@ -33,38 +44,31 @@ export function createMemoryCommand(): Command {
     });
 
   cmd
-    .command("list")
-    .description("List all memory keys")
+    .command('list')
+    .description('List all memory keys')
     .action(async () => {
       const keys = await listMemoryKeys();
-      if (keys.length === 0) {
-        console.log(chalk.dim("No memory entries."));
-        return;
-      }
-      for (const key of keys) {
-        console.log(chalk.blue(key));
-      }
+      printKeyList(keys);
     });
 
   cmd
-    .command("search <query>")
-    .description("Search memory entries")
+    .command('search <query>')
+    .description('Search memory entries')
     .action(async (query: string) => {
       const results = await searchMemory(query);
       if (results.length === 0) {
-        console.log(chalk.dim("No matches."));
+        console.log(chalk.dim('No matches.'));
         return;
       }
       for (const { key, content } of results) {
-        const preview =
-          content.length > 80 ? content.slice(0, 80) + "…" : content;
+        const preview = content.length > 80 ? content.slice(0, 80) + '\u2026' : content;
         console.log(`${chalk.blue(key)}: ${preview}`);
       }
     });
 
   cmd
-    .command("delete <key>")
-    .description("Delete a memory entry")
+    .command('delete <key>')
+    .description('Delete a memory entry')
     .action(async (key: string) => {
       const deleted = await deleteMemory(key);
       if (deleted) {
@@ -77,13 +81,7 @@ export function createMemoryCommand(): Command {
   // Default: list
   cmd.action(async () => {
     const keys = await listMemoryKeys();
-    if (keys.length === 0) {
-      console.log(chalk.dim("No memory entries."));
-      return;
-    }
-    for (const key of keys) {
-      console.log(chalk.blue(key));
-    }
+    printKeyList(keys);
   });
 
   return cmd;
